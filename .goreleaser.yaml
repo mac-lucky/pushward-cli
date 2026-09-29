@@ -15,22 +15,6 @@ builds:
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
-# Optional: signs and notarizes the darwin binaries with quill (it runs on a
-# Linux runner) once the MACOS_* secrets exist. Without them the darwin
-# binaries ship unsigned; Homebrew formula installs never meet Gatekeeper.
-notarize:
-  macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
-      sign:
-        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
-        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
-      notarize:
-        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
-        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
-        key: "{{ .Env.MACOS_NOTARY_KEY }}"
-        wait: true
-        timeout: 20m
-
 archives:
   - format_overrides:
       - goos: windows
