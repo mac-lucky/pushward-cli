@@ -95,8 +95,9 @@ jobs:
         env:
           COMMITTER_TOKEN: ${{ secrets.PUSHWARD_RELEASE_PAT }}
 
-  # Pins the new image in mac-lucky/pushward-action, then tags and releases
-  # it there, moving the major tag (v1) along. Prereleases stop before this.
+  # Copies action/action.yml into mac-lucky/pushward-action with the new image
+  # pinned, then tags and releases it there, moving the major tag (v1) along.
+  # Prereleases stop before this.
   bump-action:
     name: Release pushward-action
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
@@ -111,28 +112,38 @@ jobs:
       - name: Pull the image anonymously
         run: docker run --rm "ghcr.io/mac-lucky/pushward-cli:${TAG#v}" version
 
+      - name: Checkout the action manifest
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: cli
+          sparse-checkout: action
+          persist-credentials: false
+
       - name: Checkout pushward-action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: mac-lucky/pushward-action
+          path: pushward-action
           token: ${{ secrets.PUSHWARD_RELEASE_PAT }}
           fetch-depth: 0
           # The pushes below reuse the persisted PAT.
           persist-credentials: true # zizmor: ignore[artipacked] the job uploads no artifacts
 
-      - name: Pin, tag and release
+      - name: Copy, pin, tag and release
+        working-directory: pushward-action
         env:
           GH_TOKEN: ${{ secrets.PUSHWARD_RELEASE_PAT }}
         run: |
           set -euo pipefail
           VERSION="${TAG#v}"
           major="${VERSION%%.*}"
+          cp ../cli/action/action.yml action.yml
           sed -i -E "s#(docker://ghcr\.io/mac-lucky/pushward-cli:)[^'\"]+#\1${VERSION}#" action.yml
           grep -q "docker://ghcr.io/mac-lucky/pushward-cli:${VERSION}'" action.yml
           git config user.name mac-lucky
           git config user.email 44085390+mac-lucky@users.noreply.github.com
           if ! git diff --quiet; then
-            git commit -am "chore(image): pin pushward-cli ${VERSION}"
+            git commit -am "chore(action): sync with pushward-cli ${VERSION}"
             git push origin HEAD:main
           fi
           # A re-run finds the version tag in place and only moves the major.

@@ -1,0 +1,86 @@
+name: PushWard
+description: Send push notifications, drive Live Activities and widgets, and wait for answers from your iPhone
+author: mac-lucky
+branding:
+  icon: bell
+  color: blue
+
+inputs:
+  token:
+    description: PushWard integration key (hlk_...). Pass it from a secret.
+    required: true
+  command:
+    description: >-
+      pushward command to run, e.g. "notify", "activity start", "activity end",
+      "widget update", "email send --to ops@example.com --subject Report".
+      Shell-split. Keep untrusted values out of it; use the inputs below.
+    default: notify
+  slug:
+    description: >-
+      Activity or widget slug. Activity commands default to
+      gha-<owner>-<repo>-<run_id>-<job>; set it in matrix jobs.
+  title:
+    description: Notification title
+  body:
+    description: Notification body
+  subtitle:
+    description: Secondary line of a notification, activity or widget
+  level:
+    description: "Notification interruption level: passive, active, time-sensitive or critical"
+  url:
+    description: URL opened on tap. Notifications and started activities default to the run's page.
+  name:
+    description: Activity or widget display name. activity start defaults to the workflow name.
+  template:
+    description: Activity or widget template, e.g. generic, steps, approval, gauge
+  text:
+    description: Status text of an activity, or the plain-text body of an email
+  progress:
+    description: Activity progress from 0 to 1
+  icon:
+    description: SF Symbol name, or mdi:<name>
+  color:
+    description: Accent color, a name (green, red, ...) or #RRGGBB
+  status:
+    description: "For activity end: success, failure or cancelled. Pass job.status."
+  wait:
+    description: >-
+      How long to wait for an answer, e.g. 15m. For notify this needs actions;
+      for activity wait it is the timeout. The step fails if nobody answers.
+  actions:
+    description: >-
+      Answer buttons, one id=Title per line. Notification actions, or the
+      options of an approval activity.
+  fields:
+    description: >-
+      Extra typed fields, one key=value per line, with dotted keys
+      (content.total_steps=4, push=false, metadata.env="prod").
+  json:
+    description: Request body as JSON. Inputs and fields are applied on top of it.
+  api-url:
+    description: API base URL
+  fail-on-error:
+    description: Fail the step when the call fails. Set to false to only warn.
+    default: "true"
+
+outputs:
+  response:
+    description: The API response as JSON
+  id:
+    description: Notification or scheduled notification id
+  slug:
+    description: Activity or widget slug
+  answer:
+    description: The id of the tapped action, or the chosen option of an approval activity
+  answer-text:
+    description: Text typed with the answer, if any
+  status:
+    description: >-
+      Delivery of a notification or email (all, partial, none), state of an
+      activity (ongoing, ended), status of an answer (pending, answered) or
+      of a scheduled notification
+
+runs:
+  using: docker
+  image: 'docker://ghcr.io/mac-lucky/pushward-cli:0.0.0'
+  args: [gha]
