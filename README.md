@@ -10,7 +10,7 @@ The same binary is the runtime of [pushward-action](https://github.com/mac-lucky
 brew install mac-lucky/tap/pushward
 ```
 
-Or `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`, or grab an archive from [Releases](https://github.com/mac-lucky/pushward-cli/releases) (macOS builds are signed and notarized). There is also an image:
+Or `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`, or grab an archive from [Releases](https://github.com/mac-lucky/pushward-cli/releases). The macOS binaries in those archives are not signed yet, so a copy downloaded with a browser needs `xattr -d com.apple.quarantine pushward` before macOS will run it; Homebrew and `go install` never hit that. There is also an image:
 
 ```sh
 docker run --rm -e PUSHWARD_API_TOKEN ghcr.io/mac-lucky/pushward-cli notify --title Hi --body There

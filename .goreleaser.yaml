@@ -17,9 +17,9 @@ builds:
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
-# Signs and notarizes the darwin binaries with quill, so this runs on a Linux
-# runner. The workflow refuses to start without MACOS_SIGN_P12; the enabled
-# check only keeps local snapshot builds working.
+# Optional: signs and notarizes the darwin binaries with quill (it runs on a
+# Linux runner) once the MACOS_* secrets exist. Without them the darwin
+# binaries ship unsigned; Homebrew formula installs never meet Gatekeeper.
 notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
@@ -56,24 +56,3 @@ release:
   mode: keep-existing
   replace_existing_artifacts: true
   prerelease: auto
-
-homebrew_casks:
-  - name: pushward
-    repository:
-      owner: mac-lucky
-      name: homebrew-tap
-      branch: main
-      token: "{{ .Env.PUSHWARD_RELEASE_PAT }}"
-    directory: Casks
-    homepage: https://pushward.app
-    description: Command-line client for PushWard notifications, Live Activities and widgets
-    license: MIT
-    commit_author:
-      name: mac-lucky
-      email: 44085390+mac-lucky@users.noreply.github.com
-    commit_msg_template: "chore(pushward): update cask to {{ .Tag }}"
-    skip_upload: auto
-    generate_completions_from_executable:
-      args: [completion]
-      shell_parameter_format: cobra
-      shells: [bash, zsh, fish]
