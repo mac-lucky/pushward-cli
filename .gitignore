@@ -4,7 +4,6 @@
 
 # goreleaser
 dist/
-completions/
 
 # IDE
 .idea/

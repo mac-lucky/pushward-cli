@@ -2,15 +2,16 @@ ARG GO_VERSION=1.27.1
 
 FROM golang:${GO_VERSION}-alpine AS builder
 
-ARG VERSION=dev
-ARG COMMIT_SHA=unknown
-ARG BUILD_DATE=unknown
-
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Declared here, not above: a changed ARG invalidates every RUN after it,
+# and the go mod download layer should survive a new version.
+ARG VERSION=dev
+ARG COMMIT_SHA=unknown
+ARG BUILD_DATE=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_SHA} -X main.buildDate=${BUILD_DATE}" \
     -o /pushward ./cmd/pushward

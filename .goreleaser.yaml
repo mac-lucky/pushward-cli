@@ -4,9 +4,7 @@ version: 2
 project_name: pushward
 
 builds:
-  - id: pushward
-    main: ./cmd/pushward
-    binary: pushward
+  - main: ./cmd/pushward
     env:
       - CGO_ENABLED=0
     flags:
@@ -23,7 +21,6 @@ builds:
 notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
-      ids: [pushward]
       sign:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
         password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
@@ -35,14 +32,9 @@ notarize:
         timeout: 20m
 
 archives:
-  - formats: [tar.gz]
-    format_overrides:
+  - format_overrides:
       - goos: windows
         formats: [zip]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files:
-      - LICENSE
-      - README.md
 
 checksum:
   name_template: checksums.txt

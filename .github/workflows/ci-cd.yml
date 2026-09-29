@@ -30,17 +30,11 @@ jobs:
       app_name: "pushward-cli"
       ghcr_image: "ghcr.io/mac-lucky/pushward-cli"
       dockerhub_image: "maclucky/pushward-cli"
-      push_to_dockerhub: false
       main_branch: "main"
-      runner_default: "ubuntu-latest"
-      runner_amd64: "ubuntu-latest"
-      runner_arm64: "ubuntu-24.04-arm"
-      skip_qemu_setup: true
       enable_go_tests: true
       go_test_args: "-race"
       # A one-shot client: there is no server to health-check.
       enable_container_tests: false
-      enable_kubernetes_tests: false
 
   goreleaser:
     name: Binaries
@@ -86,11 +80,12 @@ jobs:
 
   # Opens a PR in mac-lucky/homebrew-tap moving the formula to this tag's
   # source tarball. The tap builds bottles on the PR and publishes them once
-  # its tests pass. Prereleases stop before this.
+  # its tests pass. Prereleases skip this, and a tag that is not semver has
+  # already failed ci-cd.
   homebrew:
     name: Homebrew formula
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-    needs: goreleaser
+    needs: ci-cd
     runs-on: ubuntu-latest
     permissions: {}
     steps:
@@ -112,28 +107,16 @@ jobs:
   bump-action:
     name: Release pushward-action
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-    needs: goreleaser
+    needs: ci-cd
     runs-on: ubuntu-latest
     permissions: {}
+    env:
+      TAG: ${{ github.ref_name }}
     steps:
-      - name: Version
-        id: version
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          version="${TAG#v}"
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::not a release tag: $TAG"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
       # Action users pull the image without credentials. This runner has none
       # either, so a private package fails here instead of in their workflows.
       - name: Pull the image anonymously
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: docker run --rm "ghcr.io/mac-lucky/pushward-cli:${VERSION}" version
+        run: docker run --rm "ghcr.io/mac-lucky/pushward-cli:${TAG#v}" version
 
       - name: Checkout pushward-action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -146,10 +129,10 @@ jobs:
 
       - name: Pin, tag and release
         env:
-          VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ secrets.PUSHWARD_RELEASE_PAT }}
         run: |
           set -euo pipefail
+          VERSION="${TAG#v}"
           major="${VERSION%%.*}"
           sed -i -E "s#(docker://ghcr\.io/mac-lucky/pushward-cli:)[^'\"]+#\1${VERSION}#" action.yml
           grep -q "docker://ghcr.io/mac-lucky/pushward-cli:${VERSION}'" action.yml

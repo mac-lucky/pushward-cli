@@ -1,7 +1,0 @@
-rules:
-  unpinned-uses:
-    config:
-      policies:
-        # The fleet reusables ride @master, and the e2e workflow tests the
-        # action's moving major tag.
-        mac-lucky/*: any

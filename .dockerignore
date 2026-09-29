@@ -1,7 +1,6 @@
 .git
 .github
 dist
-completions
 openapi.yaml
 **/*_test.go
 *.md
