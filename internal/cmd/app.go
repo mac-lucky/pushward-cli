@@ -284,6 +284,8 @@ func (a *App) poll(ctx context.Context, opID string, params map[string]string, w
 
 var slugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$`)
 
+var keyIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
 // positionals returns the <name> placeholders of a command's Use line, the
 // one place a command declares its arguments.
 func positionals(c *cobra.Command) []string {
@@ -315,6 +317,10 @@ func checkArgs(cmd *cobra.Command, got []string) error {
 		case "id":
 			if _, err := strconv.ParseUint(got[i], 10, 64); err != nil {
 				return usagef("invalid id %q: want a number", got[i])
+			}
+		case "key-id":
+			if !keyIDPattern.MatchString(got[i]) {
+				return usagef("invalid key id %q: want a UUID from pushward key list", got[i])
 			}
 		}
 	}

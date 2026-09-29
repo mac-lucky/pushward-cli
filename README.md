@@ -28,6 +28,18 @@ pushward auth status
 
 The environment variable wins over the stored key. There is no `--token` flag on purpose, so the key stays out of shell history and `ps`.
 
+With the account's default key you can create, change, roll and revoke its other keys, for example to give each bridge or cron job its own key limited to what it needs:
+
+```sh
+pushward key list
+pushward key create backup --notifications --activity-slugs 'backup-*' --jq .key   # prints only the new key
+pushward key update <key-id> --all-activities --widgets
+pushward key roll <key-id>
+pushward key revoke <key-id>
+```
+
+A new key is shown once, and cannot have a higher scope or a capability the default key lacks. It keeps working if the default key is later revoked or rolled. Any other key gets a 403 (`integration_key.default_key_required`) from these commands.
+
 ## Notifications
 
 ```sh

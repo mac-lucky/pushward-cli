@@ -67,7 +67,7 @@ outputs:
   response:
     description: The API response as JSON
   id:
-    description: Notification or scheduled notification id
+    description: Notification, scheduled notification or integration key id
   slug:
     description: Activity or widget slug
   answer:
@@ -77,8 +77,8 @@ outputs:
   status:
     description: >-
       Delivery of a notification or email (all, partial, none), state of an
-      activity (ongoing, ended), status of an answer (pending, answered) or
-      of a scheduled notification
+      activity (ongoing, ended), status of an answer (pending, answered), of a
+      scheduled notification, or revoked after key revoke
 
 runs:
   using: docker

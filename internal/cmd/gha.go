@@ -57,7 +57,7 @@ func (a *App) runGHA() error {
 	in := func(name string) string { return gha.Input(a.Getenv, name) }
 	token := in("token")
 	if token != "" {
-		fmt.Fprintf(a.Stdout, "::add-mask::%s\n", token)
+		gha.Mask(a.Stdout, token)
 	}
 	failOnError := in("fail-on-error") != "false"
 
@@ -81,6 +81,11 @@ func (a *App) runGHA() error {
 	root.SetArgs(argv)
 	runErr := root.Execute()
 
+	// key create and key roll return a new secret: mask it before the
+	// response reaches the log.
+	if key := str(decode(run.Body), "key"); strings.HasPrefix(key, "hlk_") {
+		gha.Mask(a.Stdout, key)
+	}
 	if out.Len() > 0 {
 		fmt.Fprintf(a.Stdout, "::group::PushWard response\n%s", out.String())
 		if !bytes.HasSuffix(out.Bytes(), []byte("\n")) {

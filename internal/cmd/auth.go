@@ -21,7 +21,8 @@ func newAuthCmd(a *App) *cobra.Command {
 		Short: "Store, check or remove your integration key",
 		Long: `Integration keys (hlk_...) are created in the PushWard app's settings.
 A key can be limited to some activity slugs and to notifications, widgets
-or emails.
+or emails. The account's default key can also create and revoke other keys
+with pushward key.
 
 PUSHWARD_API_TOKEN, when set, wins over the stored key.`,
 	}

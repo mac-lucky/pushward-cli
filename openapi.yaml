@@ -2651,6 +2651,39 @@ components:
         - slug
         - name
       type: object
+    CreateIntegrationKeyInputBody:
+      additionalProperties: false
+      properties:
+        activity_slugs:
+          description: Restrict key to specific activity slugs or patterns (trailing *)
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        emails:
+          description: "Allow this key to send transactional emails (default: false)"
+          type: boolean
+        name:
+          description: Human-readable name for the integration key
+          maxLength: 256
+          minLength: 1
+          type: string
+        notifications:
+          description: "Allow this key to create notifications (default: false)"
+          type: boolean
+        scope:
+          description: "Permission scope (default: activity:update)"
+          enum:
+            - activity:update
+            - activity:manage
+          type: string
+        widgets:
+          description: "Allow this key to manage widgets (default: false)"
+          type: boolean
+      required:
+        - name
+      type: object
     CreateNotificationRequest:
       additionalProperties: false
       properties:
@@ -3002,6 +3035,108 @@ components:
         - timestamp
         - value
       type: object
+    IntegrationKey:
+      additionalProperties: false
+      properties:
+        activity_slugs:
+          description: Scoped slug patterns. Omitted when unrestricted (all activities).
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        created_at:
+          format: date-time
+          type: string
+        emails:
+          description: Whether this key can send transactional emails (POST /emails)
+          type: boolean
+        id:
+          type: string
+        is_default:
+          description: Whether this is the auto-generated default key
+          type: boolean
+        last_used_at:
+          description: Timestamp of the last API request made with this key
+          format: date-time
+          type: string
+        name:
+          examples:
+            - ArgoCD Bridge
+          type: string
+        notifications:
+          description: Whether this key can create notifications
+          type: boolean
+        scope:
+          enum:
+            - activity:update
+            - activity:manage
+          examples:
+            - activity:manage
+          type: string
+        widgets:
+          description: Whether this key can manage widgets (POST/GET/PATCH/DELETE on /widgets)
+          type: boolean
+      required:
+        - id
+        - name
+        - scope
+        - is_default
+        - notifications
+        - widgets
+        - emails
+        - created_at
+      type: object
+    IntegrationKeyResponse:
+      additionalProperties: false
+      properties:
+        activity_slugs:
+          description: Activity slugs or patterns the key is restricted to. Omitted when unrestricted.
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        created_at:
+          format: date-time
+          type: string
+        emails:
+          description: Whether this key can send transactional emails
+          type: boolean
+        id:
+          type: string
+        is_default:
+          description: Whether this is the account's default key
+          type: boolean
+        key:
+          description: The key's secret (hlk_...). Only returned when the key is created or rolled; it cannot be read again.
+          type: string
+        last_used_at:
+          format: date-time
+          type: string
+        name:
+          type: string
+        notifications:
+          description: Whether this key can create notifications
+          type: boolean
+        scope:
+          enum:
+            - activity:update
+            - activity:manage
+          type: string
+        widgets:
+          description: Whether this key can manage widgets
+          type: boolean
+      required:
+        - id
+        - name
+        - scope
+        - is_default
+        - notifications
+        - widgets
+        - emails
+        - created_at
+      type: object
     ListActivitiesPage:
       additionalProperties: false
       properties:
@@ -3015,6 +3150,18 @@ components:
         next_cursor:
           description: Opaque cursor for the next page. Omitted on the last page.
           type: string
+      required:
+        - items
+      type: object
+    ListIntegrationKeysOutputBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/IntegrationKey"
+          type:
+            - array
+            - "null"
       required:
         - items
       type: object
@@ -3732,6 +3879,30 @@ components:
           description: Target state. Accepts ongoing or ended (case-insensitive). Optional - if omitted, the current stored state is kept. Setting ended on an ongoing activity ends the Live Activity; the card then stays on the Lock Screen for dismissal_ttl seconds (or ended_ttl capped at 4h when dismissal_ttl is unset).
           type: string
       type: object
+    UpdateIntegrationKeyInputBody:
+      additionalProperties: false
+      properties:
+        activity_slugs:
+          description: Restrict key to specific activity slugs or patterns (trailing *); an empty list removes the restriction
+          items:
+            type: string
+          type: array
+        emails:
+          description: Allow this key to send transactional emails
+          type: boolean
+        notifications:
+          description: Allow this key to create notifications
+          type: boolean
+        scope:
+          description: Permission scope
+          enum:
+            - activity:update
+            - activity:manage
+          type: string
+        widgets:
+          description: Allow this key to manage widgets
+          type: boolean
+      type: object
     UpdateWidgetRequest:
       additionalProperties: false
       properties:
@@ -4038,6 +4209,7 @@ info:
     - **`notifications`** capability: `POST /notifications`, `GET /notifications/answers/{id}` and the `/notifications/scheduled` endpoints
     - **`widgets`** capability: the `/widgets` endpoints (`POST`, `GET`, `GET /{slug}`, `PATCH /{slug}`, `DELETE /{slug}`) for server-driven iOS widget content
     - **`emails`** capability: `POST /emails` (verified, opted-in recipients only)
+    - **the account's default key** (`is_default: true`, created by the app): the `/integrations/keys` endpoints, to create, list, update, roll and revoke the account's other keys. It cannot give a key a higher scope or a capability it lacks itself, and cannot change a default key. Keys it creates keep working when the default key is revoked or rolled.
 
     The scope and the `notifications` / `widgets` / `emails` capability flags are independent axes on one key. Requests outside the key's grants receive `403`.
 
@@ -5207,6 +5379,710 @@ paths:
       summary: Health check
       tags:
         - System
+  /integrations/keys:
+    get:
+      description: "Lists the account's active integration keys, newest first, without their secrets. The one with `is_default: true` is the default key. Requires the account's default integration key."
+      operationId: listIntegrationKeys
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListIntegrationKeysOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                token.invalid:
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                default_key_required:
+                  summary: Called with an integration key that is not the account's default key
+                  value:
+                    code: integration_key.default_key_required
+                    detail: only the account's default integration key can manage integration keys
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: failed to list integration keys
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: List integration keys
+      tags:
+        - Integration Keys
+    post:
+      description: "Creates an integration key and returns its secret once, in `key`; store it, it cannot be read again. Requires the account's default integration key, and the new key cannot have a higher scope or a capability the default key lacks. It works independently of the key that created it: revoking or rolling the default key leaves it working."
+      operationId: createIntegrationKey
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIntegrationKeyInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrationKeyResponse"
+          description: Created
+        "400":
+          content:
+            application/problem+json:
+              examples:
+                slug_invalid:
+                  summary: An activity_slugs entry is not a slug or trailing-* pattern
+                  value:
+                    code: integration_key.slug_invalid
+                    detail: invalid activity slug or pattern
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                token.invalid:
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                default_key_required:
+                  summary: Called with an integration key that is not the account's default key
+                  value:
+                    code: integration_key.default_key_required
+                    detail: only the account's default integration key can manage integration keys
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                grant_exceeded:
+                  summary: The key would have more than the calling key
+                  value:
+                    code: integration_key.grant_exceeded
+                    detail: the key would have a higher scope or a capability the calling key does not have
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "409":
+          content:
+            application/problem+json:
+              examples:
+                integration_key.limit_exceeded:
+                  value:
+                    code: integration_key.limit_exceeded
+                    detail: integration key limit reached (max 25)
+                    instance: /requests/9f86d081884c7d65
+                    status: 409
+                    title: Conflict
+                    type: https://pushward.app/errors/conflict
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                unprocessable_entity:
+                  value:
+                    detail: validation failed
+                    errors:
+                      - location: body.scope
+                        message: expected value to be one of "activity:update", "activity:manage"
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: failed to create integration key
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Create integration key
+      tags:
+        - Integration Keys
+  /integrations/keys/{key_id}:
+    delete:
+      description: Revokes an integration key; requests made with it fail from then on, and its pending scheduled notifications are dropped. Requires the account's default integration key, which cannot revoke a default key (itself included).
+      operationId: revokeIntegrationKey
+      parameters:
+        - in: path
+          name: key_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/problem+json:
+              examples:
+                path.too_long:
+                  value:
+                    code: path.too_long
+                    detail: key_id is too long
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                token.invalid:
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                default_key_required:
+                  summary: Called with an integration key that is not the account's default key
+                  value:
+                    code: integration_key.default_key_required
+                    detail: only the account's default integration key can manage integration keys
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                default_target:
+                  summary: The target is a default key
+                  value:
+                    code: integration_key.default_target
+                    detail: a default integration key can only be revoked, updated or rolled from the app
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                integration_key.not_found:
+                  value:
+                    code: integration_key.not_found
+                    detail: integration key not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: failed to revoke integration key
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Revoke integration key
+      tags:
+        - Integration Keys
+    patch:
+      description: Changes a key's scope, activity slug restriction or capability flags; omitted fields are left as they are. Requires the account's default integration key, which cannot update a default key, and the result cannot have a higher scope or a capability the default key lacks.
+      operationId: updateIntegrationKey
+      parameters:
+        - in: path
+          name: key_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIntegrationKeyInputBody"
+              minProperties: 1
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrationKeyResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              examples:
+                body_required:
+                  summary: The patch sets no field
+                  value:
+                    code: request.body_required
+                    detail: at least one of scope, activity_slugs, notifications, widgets or emails is required
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+                slug_invalid:
+                  summary: An activity_slugs entry is not a slug or trailing-* pattern
+                  value:
+                    code: integration_key.slug_invalid
+                    detail: invalid activity slug or pattern
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                token.invalid:
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                default_key_required:
+                  summary: Called with an integration key that is not the account's default key
+                  value:
+                    code: integration_key.default_key_required
+                    detail: only the account's default integration key can manage integration keys
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                default_target:
+                  summary: The target is a default key
+                  value:
+                    code: integration_key.default_target
+                    detail: a default integration key can only be revoked, updated or rolled from the app
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                grant_exceeded:
+                  summary: The key would have more than the calling key
+                  value:
+                    code: integration_key.grant_exceeded
+                    detail: the key would have a higher scope or a capability the calling key does not have
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                integration_key.not_found:
+                  value:
+                    code: integration_key.not_found
+                    detail: integration key not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                unprocessable_entity:
+                  value:
+                    detail: validation failed
+                    errors:
+                      - location: body.scope
+                        message: expected value to be one of "activity:update", "activity:manage"
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: failed to update integration key
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Update integration key
+      tags:
+        - Integration Keys
+  /integrations/keys/{key_id}/roll:
+    post:
+      description: Replaces a key's secret and returns the new one once, in `key`; the old secret stops working. Requires the account's default integration key, which cannot roll a default key or a key with a higher scope or a capability it lacks.
+      operationId: rollIntegrationKey
+      parameters:
+        - in: path
+          name: key_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrationKeyResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              examples:
+                path.too_long:
+                  value:
+                    code: path.too_long
+                    detail: key_id is too long
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                token.invalid:
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                default_key_required:
+                  summary: Called with an integration key that is not the account's default key
+                  value:
+                    code: integration_key.default_key_required
+                    detail: only the account's default integration key can manage integration keys
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                default_target:
+                  summary: The target is a default key
+                  value:
+                    code: integration_key.default_target
+                    detail: a default integration key can only be revoked, updated or rolled from the app
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                grant_exceeded:
+                  summary: The key would have more than the calling key
+                  value:
+                    code: integration_key.grant_exceeded
+                    detail: the key would have a higher scope or a capability the calling key does not have
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                integration_key.not_found:
+                  value:
+                    code: integration_key.not_found
+                    detail: integration key not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: failed to roll integration key
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Roll integration key
+      tags:
+        - Integration Keys
   /notifications:
     post:
       operationId: createNotification
@@ -6781,6 +7657,8 @@ tags:
     name: Auth
   - description: Create, list, and manage trackable activities
     name: Activities
+  - description: Scoped keys for external services (Home Assistant, IoT, CI/CD)
+    name: Integration Keys
   - description: In-app notification inbox with optional APNs push delivery
     name: Notifications
   - description: Transactional email channel (verified-recipient relay via AWS SES)

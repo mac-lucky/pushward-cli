@@ -60,6 +60,11 @@ func EscapeData(s string) string {
 	return strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A").Replace(s)
 }
 
+// Mask asks the runner to redact value from the rest of the job log.
+func Mask(w io.Writer, value string) {
+	fmt.Fprintf(w, "::add-mask::%s\n", value)
+}
+
 // Annotate writes a PushWard warning or error annotation for the run page.
 func Annotate(w io.Writer, level, msg string) {
 	fmt.Fprintf(w, "::%s title=PushWard::%s\n", level, EscapeData(msg))
