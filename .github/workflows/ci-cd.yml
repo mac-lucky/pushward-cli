@@ -1,0 +1,163 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Tests and analysis on every push and PR. A v* tag also publishes the image
+  # (the runtime of the GitHub Action) and creates the GitHub Release with the
+  # notes and the SBOM; the two jobs below add the binaries to it.
+  ci-cd:
+    uses: mac-lucky/actions-shared-workflows/.github/workflows/go-cicd-reusable.yml@master
+    permissions:
+      contents: write
+      packages: write
+      security-events: write
+      actions: read
+    with:
+      app_name: "pushward-cli"
+      ghcr_image: "ghcr.io/mac-lucky/pushward-cli"
+      dockerhub_image: "maclucky/pushward-cli"
+      push_to_dockerhub: false
+      main_branch: "main"
+      runner_default: "ubuntu-latest"
+      runner_amd64: "ubuntu-latest"
+      runner_arm64: "ubuntu-24.04-arm"
+      skip_qemu_setup: true
+      enable_go_tests: true
+      go_test_args: "-race"
+      # A one-shot client: there is no server to health-check.
+      enable_container_tests: false
+      enable_kubernetes_tests: false
+
+  goreleaser:
+    name: Binaries and Homebrew cask
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: ci-cd
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+      MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+      MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+      MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+      PUSHWARD_RELEASE_PAT: ${{ secrets.PUSHWARD_RELEASE_PAT }}
+    steps:
+      # GoReleaser skips notarizing when MACOS_SIGN_P12 is empty, and an
+      # unsigned darwin binary would ship without any error.
+      - name: Require the release secrets
+        run: |
+          missing=0
+          for name in MACOS_SIGN_P12 MACOS_SIGN_PASSWORD MACOS_NOTARY_KEY MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID PUSHWARD_RELEASE_PAT; do
+            if [ -z "${!name}" ]; then
+              echo "::error::secret $name is not set"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Same resolution as the reusable: the go.mod minor, newest patch.
+      - name: Go version
+        id: go
+        run: echo "version=$(grep '^go ' go.mod | cut -d' ' -f2 | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          check-latest: true
+          cache: false
+
+      - name: GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  # Pins the new image in mac-lucky/pushward-action, then tags and releases
+  # it there, moving the major tag (v1) along. Prereleases stop before this.
+  bump-action:
+    name: Release pushward-action
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::not a release tag: $TAG"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Action users pull the image without credentials. This runner has none
+      # either, so a private package fails here instead of in their workflows.
+      - name: Pull the image anonymously
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: docker run --rm "ghcr.io/mac-lucky/pushward-cli:${VERSION}" version
+
+      - name: Checkout pushward-action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: mac-lucky/pushward-action
+          token: ${{ secrets.PUSHWARD_RELEASE_PAT }}
+          fetch-depth: 0
+          # The pushes below reuse the persisted PAT.
+          persist-credentials: true # zizmor: ignore[artipacked] the job uploads no artifacts
+
+      - name: Pin, tag and release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.PUSHWARD_RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          major="${VERSION%%.*}"
+          sed -i -E "s#(docker://ghcr\.io/mac-lucky/pushward-cli:)[^'\"]+#\1${VERSION}#" action.yml
+          grep -q "docker://ghcr.io/mac-lucky/pushward-cli:${VERSION}'" action.yml
+          git config user.name mac-lucky
+          git config user.email 44085390+mac-lucky@users.noreply.github.com
+          if ! git diff --quiet; then
+            git commit -am "chore(image): pin pushward-cli ${VERSION}"
+            git push origin HEAD:main
+          fi
+          # A re-run finds the version tag in place and only moves the major.
+          if ! git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+            git tag "v${VERSION}"
+            git push origin "v${VERSION}"
+          fi
+          git tag -f "v${major}" "v${VERSION}"
+          git push -f origin "v${major}"
+          if ! gh release view "v${VERSION}" --repo mac-lucky/pushward-action >/dev/null 2>&1; then
+            gh release create "v${VERSION}" --repo mac-lucky/pushward-action --verify-tag \
+              --title "v${VERSION}" \
+              --notes "Runs pushward-cli ${VERSION}. Changes: https://github.com/mac-lucky/pushward-cli/releases/tag/v${VERSION}"
+          fi

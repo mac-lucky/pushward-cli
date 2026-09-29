@@ -1,0 +1,131 @@
+# pushward-cli
+
+`pushward` is a command-line client for [PushWard](https://pushward.app): push notifications, Live Activities, home screen widgets, scheduled notifications and email, from a shell script, a cron job or CI. It covers every operation in the public API, and anything newer is reachable through `pushward api`.
+
+The same binary is the runtime of [pushward-action](https://github.com/mac-lucky/pushward-action) for GitHub Actions.
+
+## Install
+
+```sh
+brew install mac-lucky/tap/pushward
+```
+
+Or `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`, or grab an archive from [Releases](https://github.com/mac-lucky/pushward-cli/releases) (macOS builds are signed and notarized). There is also an image:
+
+```sh
+docker run --rm -e PUSHWARD_API_TOKEN ghcr.io/mac-lucky/pushward-cli notify --title Hi --body There
+```
+
+## Key
+
+Copy an integration key (`hlk_...`) from the app (Settings, Integration Key), then either export it or store it once:
+
+```sh
+export PUSHWARD_API_TOKEN=hlk_...
+pushward auth login          # prompts, checks the key, writes ~/.config/pushward/config.json (0600)
+pushward auth status
+```
+
+The environment variable wins over the stored key. There is no `--token` flag on purpose, so the key stays out of shell history and `ps`.
+
+## Notifications
+
+```sh
+pushward notify --title "Backup done" --body "412 GB in 38m"
+make 2>&1 | tail -20 | pushward notify --title "Build log" --body -
+pushward notify --title "Disk" --body "/data at 91%" --level time-sensitive --url https://grafana.example.com
+```
+
+Add buttons with `--action`, and `--wait` blocks until one is tapped:
+
+```sh
+answer=$(pushward notify --title "Deploy to prod?" --body v2.4.0 \
+  --action deploy=Deploy --action skip=Skip --wait 15m --jq .action_id)
+[ "$answer" = deploy ] && ./deploy.sh
+```
+
+Nobody answering in time exits 7. `pushward notification answer <id> --wait 5m` picks up the same answer later.
+
+## Live Activities
+
+```sh
+pushward activity start deploy --name "Deploy api" --template steps --step 1/3 --step-labels Build,Test,Ship --text Building
+pushward activity update deploy --step 2/3 --text Testing
+pushward activity end deploy --status success
+```
+
+`activity end --status success|failure|cancelled` shows a final frame first (green check, red cross or grey stop, with the progress filled on success), holds it for `--display-time` (4s by default) and then ends the card, so the Lock Screen shows the outcome instead of a card that just vanishes. `--text`, `--icon` and `--color` override the preset.
+
+All ten templates work. For the ones without a dedicated flag, set content fields directly:
+
+```sh
+pushward activity update ci -F content.progress=0.4 -f content.state="Compiling"
+pushward activity update board --data @board.json
+```
+
+An approval card waits for a decision the same way a notification does:
+
+```sh
+pushward activity start release --template approval --text "Ship 2.4?" --option ship=Ship --option hold=Hold
+pushward activity wait release --timeout 30m --jq .content.answer.option
+```
+
+## Widgets, schedules, email
+
+```sh
+pushward widget create cpu --template gauge --min 0 --max 100 --unit % --value 12
+pushward widget update cpu --value 57
+
+pushward schedule create --in 2h --title "Stand up" --body Stretch
+pushward schedule create --cron "0 9 * * 1-5" --tz Europe/Warsaw --title Standup --body "In 5 minutes"
+pushward schedule list
+pushward schedule cancel 1234 --purge
+
+pushward email send --to ops@example.com --subject "Nightly report" --text-file report.txt
+```
+
+Email only goes to recipients you have verified in the app.
+
+## Request bodies
+
+Every write command takes the same four layers, later ones winning: `--data` (JSON literal, `@file` or `-` for stdin), the command's own flags, `-f key=value` (always a string) and `-F key=value` (typed: numbers, `true`/`false`/`null`, JSON literals, `@file`). Keys are dotted paths; `key[]` appends to an array and `key[2]` sets an index.
+
+```sh
+pushward notify --title T --body B -F push=false -f metadata.host=web-1
+pushward activity update rack -F content.template=board \
+  -F 'content.tiles[]={"label":"CPU","value":"12","unit":"%"}' -F 'content.tiles[]={"label":"Fans","value":"on"}'
+```
+
+## Output
+
+On a terminal you get a short summary or a table. Piped, or with `--json`, you get the API response as JSON; `--jq` filters it and `-q` prints nothing.
+
+```sh
+pushward activity list --state ongoing --jq '.items[].slug'
+pushward me --jq .live_activity_updates_used
+```
+
+Exit codes are stable, so scripts can branch on them:
+
+| Code | Meaning |
+|---|---|
+| 0 | ok |
+| 1 | any other error, such as a 422 validation failure |
+| 2 | bad usage |
+| 3 | missing, invalid or unauthorized key |
+| 4 | not found |
+| 5 | rate limited or out of quota |
+| 6 | server error or network failure |
+| 7 | `--wait` ran out |
+
+Rate limits (429) and 503s are retried for up to a minute, honoring `Retry-After`. Other server errors and network failures are only retried for reads and deletes: retrying a POST could send a notification twice.
+
+## Known limitations
+
+`activity start` makes two calls, a create and then the first update, and both count against your Live Activity quota. The API has no single call that creates an activity with a name and shows it.
+
+Completions: `pushward completion bash|zsh|fish|powershell`. Homebrew installs them for you.
+
+## License
+
+MIT

@@ -1,0 +1,18 @@
+# Binaries
+/pushward
+*.exe
+
+# goreleaser
+dist/
+completions/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+AGENTS.md
+GEMINI.md

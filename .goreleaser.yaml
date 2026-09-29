@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: pushward
+
+builds:
+  - id: pushward
+    main: ./cmd/pushward
+    binary: pushward
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit }} -X main.buildDate={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+# Signs and notarizes the darwin binaries with quill, so this runs on a Linux
+# runner. The workflow refuses to start without MACOS_SIGN_P12; the enabled
+# check only keeps local snapshot builds working.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [pushward]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+# The CI/CD workflow's release job already created the release with its notes
+# and the SBOM. GoReleaser only adds the archives to it.
+changelog:
+  disable: true
+
+release:
+  mode: keep-existing
+  replace_existing_artifacts: true
+  prerelease: auto
+
+homebrew_casks:
+  - name: pushward
+    repository:
+      owner: mac-lucky
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.PUSHWARD_RELEASE_PAT }}"
+    directory: Casks
+    homepage: https://pushward.app
+    description: Command-line client for PushWard notifications, Live Activities and widgets
+    license: MIT
+    commit_author:
+      name: mac-lucky
+      email: 44085390+mac-lucky@users.noreply.github.com
+    commit_msg_template: "chore(pushward): update cask to {{ .Tag }}"
+    skip_upload: auto
+    generate_completions_from_executable:
+      args: [completion]
+      shell_parameter_format: cobra
+      shells: [bash, zsh, fish]
