@@ -3098,7 +3098,7 @@ components:
       additionalProperties: false
       properties:
         activity_slugs:
-          description: Scoped slug patterns. Omitted when unrestricted (all activities).
+          description: Activity slugs or patterns the key is restricted to. Omitted when unrestricted.
           items:
             type: string
           type:
@@ -3117,7 +3117,7 @@ components:
         id:
           type: string
         is_default:
-          description: Whether this is the auto-generated default key
+          description: Whether this is the account's default key
           type: boolean
         last_used_at:
           description: Timestamp of the last API request made with this key
@@ -3143,7 +3143,7 @@ components:
             - activity:manage
           type: string
         widget_slugs:
-          description: Widget slug patterns the key is restricted to. Omitted when unrestricted (all widgets).
+          description: Widget slugs or patterns the key is restricted to. Omitted when unrestricted.
           items:
             type: string
           type:
@@ -3261,9 +3261,12 @@ components:
           description: The key's secret (hlk_...). Only returned when the key is created or rolled; it cannot be read again.
           type: string
         last_used_at:
+          description: Timestamp of the last API request made with this key
           format: date-time
           type: string
         name:
+          examples:
+            - ArgoCD Bridge
           type: string
         notifications:
           description: "Legacy: whether this key can create notifications (permissions.notifications is send or schedule)"
@@ -3276,6 +3279,8 @@ components:
             - activity:none
             - activity:read
             - activity:update
+            - activity:manage
+          examples:
             - activity:manage
           type: string
         widget_slugs:
