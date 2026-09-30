@@ -198,6 +198,49 @@ components:
         - label
         - value
       type: object
+    CallerIntegrationKey:
+      additionalProperties: false
+      properties:
+        activity_slugs:
+          description: Activity slugs or patterns the key is restricted to. Omitted when unrestricted.
+          items:
+            type: string
+          readOnly: true
+          type:
+            - array
+            - "null"
+        expires_at:
+          description: When the key stops working. Omitted when it never expires.
+          format: date-time
+          readOnly: true
+          type: string
+        id:
+          readOnly: true
+          type: string
+        is_default:
+          description: Whether this is the account's default key, the only one that can manage the account's other keys
+          readOnly: true
+          type: boolean
+        name:
+          readOnly: true
+          type: string
+        permissions:
+          $ref: "#/components/schemas/IntegrationKeyPermissions"
+          readOnly: true
+        widget_slugs:
+          description: Widget slugs or patterns the key is restricted to. Omitted when unrestricted.
+          items:
+            type: string
+          readOnly: true
+          type:
+            - array
+            - "null"
+      required:
+        - id
+        - name
+        - is_default
+        - permissions
+      type: object
     ContentAlert:
       additionalProperties: true
       description: One-shot alert with a severity level - critical, warning, or info.
@@ -2662,24 +2705,40 @@ components:
             - array
             - "null"
         emails:
-          description: "Allow this key to send transactional emails (default: false)"
+          description: "Legacy: true gives permissions.emails send (default: false)"
           type: boolean
+        expires_at:
+          description: When the key stops working; must be in the future. Omit for a key that never expires.
+          format: date-time
+          type: string
         name:
           description: Human-readable name for the integration key
           maxLength: 256
           minLength: 1
           type: string
         notifications:
-          description: "Allow this key to create notifications (default: false)"
+          description: "Legacy: true gives permissions.notifications schedule (default: false)"
           type: boolean
+        permissions:
+          $ref: "#/components/schemas/IntegrationKeyPermissionsInput"
+          description: The key's level per resource; an omitted resource gets none. Cannot be combined with scope, notifications, widgets or emails.
         scope:
-          description: "Permission scope (default: activity:update)"
+          description: "Legacy form of permissions.activities (default: activity:update)"
           enum:
+            - activity:none
+            - activity:read
             - activity:update
             - activity:manage
           type: string
+        widget_slugs:
+          description: Restrict key to specific widget slugs or patterns (trailing *)
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         widgets:
-          description: "Allow this key to manage widgets (default: false)"
+          description: "Legacy: true gives permissions.widgets write (default: false)"
           type: boolean
       required:
         - name
@@ -3049,8 +3108,12 @@ components:
           format: date-time
           type: string
         emails:
-          description: Whether this key can send transactional emails (POST /emails)
+          description: "Legacy: whether this key can send transactional emails (permissions.emails is send)"
           type: boolean
+        expires_at:
+          description: When the key stops working. Omitted when it never expires.
+          format: date-time
+          type: string
         id:
           type: string
         is_default:
@@ -3065,27 +3128,109 @@ components:
             - ArgoCD Bridge
           type: string
         notifications:
-          description: Whether this key can create notifications
+          description: "Legacy: whether this key can create notifications (permissions.notifications is send or schedule)"
           type: boolean
+        permissions:
+          $ref: "#/components/schemas/IntegrationKeyPermissions"
         scope:
+          description: Legacy form of permissions.activities
           enum:
+            - activity:none
+            - activity:read
             - activity:update
             - activity:manage
           examples:
             - activity:manage
           type: string
+        widget_slugs:
+          description: Widget slug patterns the key is restricted to. Omitted when unrestricted (all widgets).
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         widgets:
-          description: Whether this key can manage widgets (POST/GET/PATCH/DELETE on /widgets)
+          description: "Legacy: whether this key can manage widgets (permissions.widgets is write)"
           type: boolean
       required:
         - id
         - name
+        - permissions
         - scope
         - is_default
         - notifications
         - widgets
         - emails
         - created_at
+      type: object
+    IntegrationKeyPermissions:
+      additionalProperties: false
+      properties:
+        activities:
+          description: "none; read: list and get activities; update: also PATCH; manage: also create and delete"
+          enum:
+            - none
+            - read
+            - update
+            - manage
+          type: string
+        emails:
+          description: "none; send: POST /emails"
+          enum:
+            - none
+            - send
+          type: string
+        notifications:
+          description: "none; send: POST /notifications and read answers; schedule: also /notifications/scheduled"
+          enum:
+            - none
+            - send
+            - schedule
+          type: string
+        widgets:
+          description: "none; read: list and get widgets; write: also create, update and delete"
+          enum:
+            - none
+            - read
+            - write
+          type: string
+      required:
+        - activities
+        - notifications
+        - widgets
+        - emails
+      type: object
+    IntegrationKeyPermissionsInput:
+      additionalProperties: false
+      properties:
+        activities:
+          description: "none; read: list and get activities; update: also PATCH; manage: also create and delete"
+          enum:
+            - none
+            - read
+            - update
+            - manage
+          type: string
+        emails:
+          description: "none; send: POST /emails"
+          enum:
+            - none
+            - send
+          type: string
+        notifications:
+          description: "none; send: POST /notifications and read answers; schedule: also /notifications/scheduled"
+          enum:
+            - none
+            - send
+            - schedule
+          type: string
+        widgets:
+          description: "none; read: list and get widgets; write: also create, update and delete"
+          enum:
+            - none
+            - read
+            - write
+          type: string
       type: object
     IntegrationKeyResponse:
       additionalProperties: false
@@ -3101,8 +3246,12 @@ components:
           format: date-time
           type: string
         emails:
-          description: Whether this key can send transactional emails
+          description: "Legacy: whether this key can send transactional emails (permissions.emails is send)"
           type: boolean
+        expires_at:
+          description: When the key stops working. Omitted when it never expires.
+          format: date-time
+          type: string
         id:
           type: string
         is_default:
@@ -3117,19 +3266,32 @@ components:
         name:
           type: string
         notifications:
-          description: Whether this key can create notifications
+          description: "Legacy: whether this key can create notifications (permissions.notifications is send or schedule)"
           type: boolean
+        permissions:
+          $ref: "#/components/schemas/IntegrationKeyPermissions"
         scope:
+          description: Legacy form of permissions.activities
           enum:
+            - activity:none
+            - activity:read
             - activity:update
             - activity:manage
           type: string
+        widget_slugs:
+          description: Widget slugs or patterns the key is restricted to. Omitted when unrestricted.
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         widgets:
-          description: Whether this key can manage widgets
+          description: "Legacy: whether this key can manage widgets (permissions.widgets is write)"
           type: boolean
       required:
         - id
         - name
+        - permissions
         - scope
         - is_default
         - notifications
@@ -3883,24 +4045,44 @@ components:
       additionalProperties: false
       properties:
         activity_slugs:
-          description: Restrict key to specific activity slugs or patterns (trailing *); an empty list removes the restriction
+          description: Restrict key to specific activity slugs or patterns (trailing *); an empty list or null removes the restriction
           items:
             type: string
-          type: array
+          type:
+            - array
+            - "null"
         emails:
-          description: Allow this key to send transactional emails
+          description: "Legacy: true sets permissions.emails to send, false to none"
           type: boolean
+        expires_at:
+          description: When the key stops working, in the future; null removes the expiry
+          format: date-time
+          type:
+            - string
+            - "null"
         notifications:
-          description: Allow this key to create notifications
+          description: "Legacy: true sets permissions.notifications to schedule, false to none"
           type: boolean
+        permissions:
+          $ref: "#/components/schemas/IntegrationKeyPermissionsInput"
+          description: Levels to change; omitted resources keep theirs. Cannot be combined with scope, notifications, widgets or emails.
         scope:
-          description: Permission scope
+          description: Legacy form of permissions.activities
           enum:
+            - activity:none
+            - activity:read
             - activity:update
             - activity:manage
           type: string
+        widget_slugs:
+          description: Restrict key to specific widget slugs or patterns (trailing *); an empty list or null removes the restriction
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         widgets:
-          description: Allow this key to manage widgets
+          description: "Legacy: true sets permissions.widgets to write, false to none"
           type: boolean
       type: object
     UpdateWidgetRequest:
@@ -3940,6 +4122,10 @@ components:
           description: Server-assigned user ID.
           readOnly: true
           type: string
+        integration_key:
+          $ref: "#/components/schemas/CallerIntegrationKey"
+          description: The integration key that made this request. Only present for integration keys.
+          readOnly: true
         live_activity_updates_limit:
           format: int64
           readOnly: true
@@ -4202,16 +4388,20 @@ info:
     Authorization: Bearer hlk_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345
     ```
 
-    Integration keys are created in the PushWard iOS app and grant scoped access:
+    Integration keys are created in the PushWard iOS app. Each key has a `permissions` object with one level per resource; a higher level includes the lower ones:
 
-    - **`activity:update`** scope: `PATCH /activities/{slug}`, `GET /activities`, `GET /activities/{slug}`, `GET /auth/me`
-    - **`activity:manage`** scope: All of the above, plus `POST /activities`, `DELETE /activities/{slug}`
-    - **`notifications`** capability: `POST /notifications`, `GET /notifications/answers/{id}` and the `/notifications/scheduled` endpoints
-    - **`widgets`** capability: the `/widgets` endpoints (`POST`, `GET`, `GET /{slug}`, `PATCH /{slug}`, `DELETE /{slug}`) for server-driven iOS widget content
-    - **`emails`** capability: `POST /emails` (verified, opted-in recipients only)
-    - **the account's default key** (`is_default: true`, created by the app): the `/integrations/keys` endpoints, to create, list, update, roll and revoke the account's other keys. It cannot give a key a higher scope or a capability it lacks itself, and cannot change a default key. Keys it creates keep working when the default key is revoked or rolled.
+    | Resource | Levels | Endpoints |
+    |---|---|---|
+    | `activities` | `none`, `read`, `update`, `manage` | read: `GET /activities`, `GET /activities/{slug}`; update: also `PATCH /activities/{slug}`; manage: also `POST /activities`, `DELETE /activities/{slug}` and `PATCH ?upsert=true` |
+    | `notifications` | `none`, `send`, `schedule` | send: `POST /notifications`, `GET /notifications/answers/{id}`; schedule: also the `/notifications/scheduled` endpoints |
+    | `widgets` | `none`, `read`, `write` | read: `GET /widgets`, `GET /widgets/{slug}`; write: also `POST /widgets`, `PATCH /widgets/{slug}`, `DELETE /widgets/{slug}` |
+    | `emails` | `none`, `send` | send: `POST /emails` (verified, opted-in recipients only) |
 
-    The scope and the `notifications` / `widgets` / `emails` capability flags are independent axes on one key. Requests outside the key's grants receive `403`.
+    `GET /auth/me` works with every key and reports the calling key's permissions under `integration_key`. A key can also be restricted to activity slugs (`activity_slugs`) and widget slugs (`widget_slugs`), exact or with a trailing `*`, and can have an `expires_at`, after which it answers `401 integration_key.expired`. Requests outside the key's permissions receive `403 integration_key.permission_denied`, with a `detail` naming the level they need.
+
+    Older fields stay on every key for existing clients: `scope` is `activity:<level>`, and the booleans `notifications` (send or schedule), `widgets` (write) and `emails` (send) summarize the levels. Create and update accept either `permissions` or those older fields (where `true` means the resource's highest level), not both.
+
+    **The account's default key** (`is_default: true`, created by the app) can also use the `/integrations/keys` endpoints to create, list, update, roll and revoke the account's other keys. It cannot give a key a permission above its own, and cannot change a default key. Keys it creates keep working when the default key is revoked or rolled.
 
     ## Errors
 
@@ -4321,7 +4511,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -4332,6 +4532,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                insufficient_scope:
+                  summary: Integration key has no activity access
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires activities:read"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
         "422":
           content:
             application/problem+json:
@@ -4440,7 +4656,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -4456,12 +4682,14 @@ paths:
             application/problem+json:
               examples:
                 insufficient_scope:
-                  summary: Integration key lacks the activity:manage scope
+                  summary: Integration key's activities level is below manage
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires activities:manage"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
                 slug_not_allowed:
                   summary: Key is restricted to activity slugs the target does not match
                   value:
@@ -4601,7 +4829,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -4617,12 +4855,14 @@ paths:
             application/problem+json:
               examples:
                 insufficient_scope:
-                  summary: Integration key lacks the activity:manage scope
+                  summary: Integration key's activities level is below manage
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires activities:manage"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
                 slug_not_allowed:
                   summary: Key is restricted to activity slugs the target does not match
                   value:
@@ -4758,7 +4998,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -4773,7 +5023,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                integration_key.slug_invalid:
+                insufficient_scope:
+                  summary: Integration key has no activity access
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires activities:read"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                slug_not_allowed:
+                  summary: Key is restricted to activity slugs the target does not match
                   value:
                     code: integration_key.slug_invalid
                     detail: key not allowed for this activity
@@ -4941,7 +5201,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -4957,12 +5227,14 @@ paths:
             application/problem+json:
               examples:
                 insufficient_scope:
-                  summary: Integration key scope does not permit activity updates
+                  summary: Integration key's activities level is below update
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires activities:update"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
                 slug_not_allowed:
                   summary: Key is restricted to activity slugs the target does not match
                   value:
@@ -5116,7 +5388,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -5194,7 +5476,7 @@ paths:
         - Auth
   /emails:
     post:
-      description: Sends a transactional email to a verified, non-unsubscribed recipient of the calling account. Rejects unverified recipients (403) and silently skips suppressed addresses. Requires the emails integration-key capability.
+      description: Sends a transactional email to a verified, non-unsubscribed recipient of the calling account. Rejects unverified recipients (403) and silently skips suppressed addresses. Requires an integration key with the emails level send.
       operationId: sendEmail
       requestBody:
         content:
@@ -5228,7 +5510,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -5244,12 +5536,14 @@ paths:
             application/problem+json:
               examples:
                 insufficient_scope:
-                  summary: Integration key lacks the emails capability
+                  summary: Integration key's emails level is none
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires emails:send"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
                 recipient_not_verified:
                   summary: Address has not completed double opt-in for this account
                   value:
@@ -5394,7 +5688,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -5472,7 +5776,7 @@ paths:
       tags:
         - Integration Keys
     post:
-      description: "Creates an integration key and returns its secret once, in `key`; store it, it cannot be read again. Requires the account's default integration key, and the new key cannot have a higher scope or a capability the default key lacks. It works independently of the key that created it: revoking or rolling the default key leaves it working."
+      description: "Creates an integration key and returns its secret once, in `key`; store it, it cannot be read again. Requires the account's default integration key, and the new key cannot have a permission above the default key's own. It works independently of the key that created it: revoking or rolling the default key leaves it working."
       operationId: createIntegrationKey
       requestBody:
         content:
@@ -5491,11 +5795,29 @@ paths:
           content:
             application/problem+json:
               examples:
+                expires_at_invalid:
+                  summary: expires_at is not in the future
+                  value:
+                    code: integration_key.expires_at_invalid
+                    detail: expires_at must be in the future
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+                permissions_conflict:
+                  summary: permissions sent together with a legacy field
+                  value:
+                    code: integration_key.permissions_conflict
+                    detail: send either permissions or the legacy scope, notifications, widgets and emails fields, not both
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
                 slug_invalid:
                   summary: An activity_slugs entry is not a slug or trailing-* pattern
                   value:
                     code: integration_key.slug_invalid
-                    detail: invalid activity slug or pattern
+                    detail: invalid slug or pattern in activity_slugs
                     instance: /requests/9f86d081884c7d65
                     status: 400
                     title: Bad Request
@@ -5507,7 +5829,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -5535,7 +5867,7 @@ paths:
                   summary: The key would have more than the calling key
                   value:
                     code: integration_key.grant_exceeded
-                    detail: the key would have a higher scope or a capability the calling key does not have
+                    detail: the key would have a permission above the calling key's own
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
@@ -5567,7 +5899,7 @@ paths:
                     detail: validation failed
                     errors:
                       - location: body.scope
-                        message: expected value to be one of "activity:update", "activity:manage"
+                        message: expected value to be one of "activity:none", "activity:read", "activity:update", "activity:manage"
                     instance: /requests/9f86d081884c7d65
                     status: 422
                     title: Unprocessable Entity
@@ -5657,7 +5989,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -5759,7 +6101,7 @@ paths:
       tags:
         - Integration Keys
     patch:
-      description: Changes a key's scope, activity slug restriction or capability flags; omitted fields are left as they are. Requires the account's default integration key, which cannot update a default key, and the result cannot have a higher scope or a capability the default key lacks.
+      description: Changes a key's permissions, slug restrictions or expiry; omitted fields are left as they are. Requires the account's default integration key, which cannot update a default key, and the result cannot have a permission above the default key's own.
       operationId: updateIntegrationKey
       parameters:
         - in: path
@@ -5789,7 +6131,34 @@ paths:
                   summary: The patch sets no field
                   value:
                     code: request.body_required
-                    detail: at least one of scope, activity_slugs, notifications, widgets or emails is required
+                    detail: at least one of permissions, activity_slugs, widget_slugs, expires_at, scope, notifications, widgets or emails is required
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+                default_locked:
+                  summary: Changes the default key's activity level, slug restrictions or expiry
+                  value:
+                    code: integration_key.default_locked
+                    detail: cannot change the activity level, slug restrictions or expiry of the default integration key
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+                expires_at_invalid:
+                  summary: expires_at is not in the future
+                  value:
+                    code: integration_key.expires_at_invalid
+                    detail: expires_at must be in the future
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+                permissions_conflict:
+                  summary: permissions sent together with a legacy field
+                  value:
+                    code: integration_key.permissions_conflict
+                    detail: send either permissions or the legacy scope, notifications, widgets and emails fields, not both
                     instance: /requests/9f86d081884c7d65
                     status: 400
                     title: Bad Request
@@ -5798,7 +6167,7 @@ paths:
                   summary: An activity_slugs entry is not a slug or trailing-* pattern
                   value:
                     code: integration_key.slug_invalid
-                    detail: invalid activity slug or pattern
+                    detail: invalid slug or pattern in activity_slugs
                     instance: /requests/9f86d081884c7d65
                     status: 400
                     title: Bad Request
@@ -5810,7 +6179,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -5847,7 +6226,7 @@ paths:
                   summary: The key would have more than the calling key
                   value:
                     code: integration_key.grant_exceeded
-                    detail: the key would have a higher scope or a capability the calling key does not have
+                    detail: the key would have a permission above the calling key's own
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
@@ -5879,7 +6258,7 @@ paths:
                     detail: validation failed
                     errors:
                       - location: body.scope
-                        message: expected value to be one of "activity:update", "activity:manage"
+                        message: expected value to be one of "activity:none", "activity:read", "activity:update", "activity:manage"
                     instance: /requests/9f86d081884c7d65
                     status: 422
                     title: Unprocessable Entity
@@ -5939,7 +6318,7 @@ paths:
         - Integration Keys
   /integrations/keys/{key_id}/roll:
     post:
-      description: Replaces a key's secret and returns the new one once, in `key`; the old secret stops working. Requires the account's default integration key, which cannot roll a default key or a key with a higher scope or a capability it lacks.
+      description: Replaces a key's secret and returns the new one once, in `key`; the old secret stops working. Requires the account's default integration key, which cannot roll a default key or a key with a permission above its own.
       operationId: rollIntegrationKey
       parameters:
         - in: path
@@ -5973,7 +6352,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -6010,7 +6399,7 @@ paths:
                   summary: The key would have more than the calling key
                   value:
                     code: integration_key.grant_exceeded
-                    detail: the key would have a higher scope or a capability the calling key does not have
+                    detail: the key would have a permission above the calling key's own
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
@@ -6118,7 +6507,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -6133,12 +6532,24 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                activity_slug_forbidden:
+                  summary: activity_slug from a key with no activity access
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires activities:read to set activity_slug"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                insufficient_scope:
+                  summary: Integration key's notifications level is below send
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires notifications:send"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -6277,7 +6688,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -6292,12 +6713,15 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key's notifications level is none
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires notifications:send"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -6457,7 +6881,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -6472,12 +6906,15 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key's notifications level is below schedule
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires notifications:schedule"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -6602,7 +7039,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -6617,12 +7064,24 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                activity_slug_forbidden:
+                  summary: activity_slug from a key with no activity access
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires activities:read to set activity_slug"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                insufficient_scope:
+                  summary: Integration key's notifications level is below schedule
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires notifications:schedule"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -6759,7 +7218,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -6774,12 +7243,15 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key's notifications level is below schedule
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires notifications:schedule"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -6888,7 +7360,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -6903,12 +7385,15 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key's notifications level is below schedule
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires notifications:schedule"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -7008,7 +7493,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -7023,12 +7518,15 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key has no widget access
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires widgets:read"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -7123,7 +7621,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -7138,12 +7646,24 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key's widgets level is below write
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires widgets:write"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                slug_not_allowed:
+                  summary: Key is restricted to widget slugs the target does not match
+                  value:
+                    code: integration_key.slug_invalid
+                    detail: key not allowed for this widget
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -7265,7 +7785,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -7280,12 +7810,24 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key's widgets level is below write
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires widgets:write"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                slug_not_allowed:
+                  summary: Key is restricted to widget slugs the target does not match
+                  value:
+                    code: integration_key.slug_invalid
+                    detail: key not allowed for this widget
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -7389,7 +7931,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -7404,12 +7956,24 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key's widgets level is below read
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires widgets:read"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                slug_not_allowed:
+                  summary: Key is restricted to widget slugs the target does not match
+                  value:
+                    code: integration_key.slug_invalid
+                    detail: key not allowed for this widget
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden
@@ -7529,7 +8093,17 @@ paths:
           content:
             application/problem+json:
               examples:
-                token.invalid:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
                   value:
                     code: token.invalid
                     detail: invalid token
@@ -7544,12 +8118,24 @@ paths:
           content:
             application/problem+json:
               examples:
-                forbidden:
+                insufficient_scope:
+                  summary: Integration key's widgets level is below write
                   value:
-                    detail: insufficient permissions
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires widgets:write"
                     instance: /requests/9f86d081884c7d65
                     status: 403
                     title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                slug_not_allowed:
+                  summary: Key is restricted to widget slugs the target does not match
+                  value:
+                    code: integration_key.slug_invalid
+                    detail: key not allowed for this widget
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
               schema:
                 $ref: "#/components/schemas/Problem"
           description: Forbidden

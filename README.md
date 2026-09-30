@@ -32,13 +32,17 @@ With the account's default key you can create, change, roll and revoke its other
 
 ```sh
 pushward key list
-pushward key create backup --notifications --activity-slugs 'backup-*' --jq .key   # prints only the new key
-pushward key update <key-id> --all-activities --widgets
+pushward key create backup --notifications=send --activity-slugs 'backup-*' --jq .key   # prints only the new key
+pushward key create alerts --activities none --notifications=send
+pushward key create dashboard --activities read --widgets=read --expires 90d
+pushward key update <key-id> --all-activities --widgets=write --no-expiry
 pushward key roll <key-id>
 pushward key revoke <key-id>
 ```
 
-A new key is shown once, and cannot have a higher scope or a capability the default key lacks. It keeps working if the default key is later revoked or rolled. Any other key gets a 403 (`integration_key.default_key_required`) from these commands.
+Each key has one level per resource: `--activities none|read|update|manage`, `--notifications=none|send|schedule`, `--widgets=none|read|write` and `--emails=none|send`. The last three take their level after `=`; on their own (or with `=true`) they mean the highest level and `=false` means none, as before. On create, a resource you leave out gets none, except activities, which stay at update unless you pass `--activities` (`--activities none` for a key that only sends notifications). `--activity-slugs` and `--widget-slugs` limit a key to some slugs, and `--expires` takes an RFC 3339 time, unix seconds, or a duration from now.
+
+A new key is shown once and cannot have a permission above the default key's own. It keeps working if the default key is later revoked or rolled. Any other key gets a 403 (`integration_key.default_key_required`) from these commands.
 
 ## Notifications
 

@@ -130,8 +130,18 @@ func writeMe(w io.Writer, u map[string]any) error {
 		}
 	}
 	if r := str(u, "quota_resets_at"); r != "" {
-		_, err := fmt.Fprintf(w, "resets       %s\n", shortTime(r))
-		return err
+		fmt.Fprintf(w, "resets       %s\n", shortTime(r))
+	}
+	// The calling integration key, which /auth/me reports for hlk_ callers.
+	if k, ok := u["integration_key"].(map[string]any); ok {
+		fmt.Fprintf(w, "key name     %s (%s)\n", str(k, "name"), str(k, "id"))
+		fmt.Fprintf(w, "permissions  %s\n", keyPermissions(k))
+		if k["activity_slugs"] != nil || k["widget_slugs"] != nil {
+			fmt.Fprintf(w, "limited to   activities %s, widgets %s\n", slugList(k, "activity_slugs"), slugList(k, "widget_slugs"))
+		}
+		if e := str(k, "expires_at"); e != "" {
+			fmt.Fprintf(w, "expires      %s\n", shortTime(e))
+		}
 	}
 	return nil
 }

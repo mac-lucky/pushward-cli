@@ -33,6 +33,7 @@ const (
 	kSecondsZero // same, 0 allowed
 	kDuration    // passed through: 90 -> number, 1h30m -> string
 	kUnix        // RFC 3339, unix seconds, or a duration from now -> unix seconds
+	kRFC3339     // RFC 3339, unix seconds, or a duration from now -> RFC 3339 (UTC)
 	kCSV         // a,b,c -> ["a","b","c"]
 	kStep        // 2 -> current_step, 2/5 -> current_step and total_steps
 )
@@ -95,6 +96,12 @@ func setField(obj map[string]any, f field, raw string, now time.Time) error {
 			return err
 		}
 		v = t.Unix()
+	case kRFC3339:
+		t, err := parseTime(raw, now)
+		if err != nil {
+			return err
+		}
+		v = t.UTC().Format(time.RFC3339)
 	case kCSV:
 		var list []any
 		for s := range strings.SplitSeq(raw, ",") {
