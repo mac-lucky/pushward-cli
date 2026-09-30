@@ -22,9 +22,11 @@ working if the default key is later revoked or rolled.
 
 Each key has a level per resource: --activities none|read|update|manage,
 --notifications=none|send|schedule, --widgets=none|read|write and
---emails=none|send (those three take their level after =; a bare flag or
-=true means the highest level, =false none). A key can also be limited to
-activity and widget slugs and given an expiry.
+--emails=none|send (those three take their level after =). On their own, a
+bare flag or =true keeps its old meaning (the highest level; for
+--notifications, send when the default key itself can only send) and =false
+means none; next to another level flag each needs a level of its own. A key
+can also be limited to activity and widget slugs and given an expiry.
 
   pushward key create backup --notifications=send --activity-slugs 'backup-*' --jq .key
   pushward key create alerts --activities none --notifications=send
@@ -44,9 +46,9 @@ var keyFields = []field{
 }
 
 // keyLevels are the permission level flags. notifications, widgets and emails
-// were booleans before levels existed and still take true/false: true is the
-// resource's top level, the meaning it always had, so a bare --notifications
-// keeps working.
+// were booleans before levels existed and still take true/false on their own,
+// sent as the legacy fields so a bare --notifications keeps the meaning the
+// server gives it.
 var keyLevels = []struct {
 	flag   string
 	levels []string
@@ -54,9 +56,9 @@ var keyLevels = []struct {
 	usage  string
 }{
 	{"activities", []string{"none", "read", "update", "manage"}, false, "activity level: none, read (list and get), update (also PATCH) or manage (also create and delete)"},
-	{"notifications", []string{"none", "send", "schedule"}, true, "notification level: none, send, or schedule (also scheduled notifications); bare --notifications means schedule"},
-	{"widgets", []string{"none", "read", "write"}, true, "widget level: none, read, or write (also create, update and delete); bare --widgets means write"},
-	{"emails", []string{"none", "send"}, true, "email level: none or send; bare --emails means send"},
+	{"notifications", []string{"none", "send", "schedule"}, true, "notification level: none, send, or schedule (also scheduled notifications); a bare --notifications on its own is the legacy true"},
+	{"widgets", []string{"none", "read", "write"}, true, "widget level: none, read, or write (also create, update and delete); a bare --widgets on its own means write"},
+	{"emails", []string{"none", "send"}, true, "email level: none or send; a bare --emails on its own means send"},
 }
 
 // keyArgs is checkArgs with a hint for the one mistake the optional-value
@@ -96,9 +98,12 @@ func addKeyFlags(c *cobra.Command) {
 // The API takes either a permissions object or the legacy scope and
 // true/false fields, never both, so once any flag names a level everything
 // goes into permissions; with true/false alone the legacy fields are sent as
-// before. On create the permissions object gives a resource left out none,
-// while the legacy default is update for activities, so create fills that in
-// to keep --widgets and --widgets=write the same key.
+// before. A true next to a level is refused rather than translated: what a
+// legacy true grants is the server's call (for notifications it depends on the
+// calling key), and one rule for all three flags is easier to state.
+// On create the permissions object gives a resource left out none, while the
+// legacy default is update for activities, so create fills that in to keep
+// --widgets=write and --widgets the same key.
 func collectKeyFields(cmd *cobra.Command, a *App, create bool) (map[string]any, error) {
 	conv, err := collectFields(cmd, keyFields, a.Now())
 	if err != nil {
@@ -135,12 +140,14 @@ func collectKeyFields(cmd *cobra.Command, a *App, create bool) (map[string]any, 
 		return conv, nil
 	}
 	for _, k := range keyLevels {
-		if on, ok := legacy[k.flag]; ok {
-			levels[k.flag] = k.levels[0]
-			if on {
-				levels[k.flag] = k.levels[len(k.levels)-1]
-			}
+		on, ok := legacy[k.flag]
+		if !ok {
+			continue
 		}
+		if on {
+			return nil, usagef("--%s: give a level (--%s=%s) when another flag sets a level", k.flag, k.flag, strings.Join(k.levels[1:], " or --"+k.flag+"="))
+		}
+		levels[k.flag] = k.levels[0]
 	}
 	if hasScope {
 		levels["activities"] = strings.TrimPrefix(scope, "activity:")

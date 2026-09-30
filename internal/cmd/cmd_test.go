@@ -76,10 +76,13 @@ type result struct {
 	sleeps         []time.Duration
 }
 
+// testNow is where runCLI's clock starts.
+var testNow = time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
+
 func runCLI(t *testing.T, srv *httptest.Server, env map[string]string, stdin string, argv ...string) result {
 	t.Helper()
 	var out, errb bytes.Buffer
-	clk := &clock{t: time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)}
+	clk := &clock{t: testNow}
 	var sleeps []time.Duration
 	a := &App{
 		Version: "test", Commit: "c", Date: "d",
@@ -224,7 +227,7 @@ func TestActivityStart(t *testing.T) {
 	if got := mustJSON(t, f.calls[0].Body); got != `{"name":"Deploy","slug":"deploy","stale_ttl":21600}` {
 		t.Errorf("create body %s", got)
 	}
-	eta := time.Date(2026, 9, 29, 12, 20, 0, 0, time.UTC).Unix()
+	eta := testNow.Add(20 * time.Minute).Unix()
 	want := `{"content":{"current_step":1,"end_date":` + jsonInt(eta) + `,"state":"Building","step_labels":["Build","Test","Ship"],"template":"generic","total_steps":3},"state":"ongoing"}`
 	if got := mustJSON(t, f.calls[1].Body); got != want {
 		t.Errorf("patch body\n got  %s\n want %s", got, want)

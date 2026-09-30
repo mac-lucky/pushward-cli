@@ -164,13 +164,11 @@ func TestKeyPermissionLevels(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("POST /integrations/keys", 201, `{"id":"`+testKeyID+`","name":"n","key":"hlk_new"}`)
 	f.reply("PATCH /integrations/keys/"+testKeyID, 200, `{"id":"`+testKeyID+`"}`)
-	now := time.Now()
-
 	for _, tc := range []struct {
 		argv []string
 		body string
 	}{
-		// A level anywhere moves everything into permissions, legacy flags included.
+		// A level anywhere moves everything into permissions; =false becomes none.
 		// On create activities stay at update unless --activities says otherwise,
 		// so --x and --x=<top> build the same key.
 		{[]string{"key", "create", "n", "--notifications=send"}, `{"name":"n","permissions":{"activities":"update","notifications":"send"}}`},
@@ -178,7 +176,7 @@ func TestKeyPermissionLevels(t *testing.T) {
 		{[]string{"key", "create", "n", "--emails=send"}, `{"name":"n","permissions":{"activities":"update","emails":"send"}}`},
 		{[]string{"key", "create", "n", "--emails=1"}, `{"emails":true,"name":"n"}`},
 		{[]string{"key", "create", "n", "--emails=True", "--widgets=0"}, `{"emails":true,"name":"n","widgets":false}`},
-		{[]string{"key", "create", "n", "--activities", "read", "--widgets", "--emails=false"}, `{"name":"n","permissions":{"activities":"read","emails":"none","widgets":"write"}}`},
+		{[]string{"key", "create", "n", "--activities", "read", "--widgets=write", "--emails=false"}, `{"name":"n","permissions":{"activities":"read","emails":"none","widgets":"write"}}`},
 		{[]string{"key", "create", "n", "--scope", "activity:none", "--notifications=send"}, `{"name":"n","permissions":{"activities":"none","notifications":"send"}}`},
 		// true/false alone keeps the legacy body.
 		{[]string{"key", "create", "n", "--scope", "activity:read", "--widgets"}, `{"name":"n","scope":"activity:read","widgets":true}`},
@@ -197,13 +195,13 @@ func TestKeyPermissionLevels(t *testing.T) {
 		}
 	}
 
-	// --expires takes a duration from now.
+	// --expires takes a duration from now (runCLI's clock).
 	f.calls = nil
 	if r := runCLI(t, srv, nil, "", "key", "create", "n", "--expires", "30d", "--jq", ".id"); r.code != 0 {
 		t.Fatalf("exit %d: %s", r.code, r.stderr)
 	}
 	exp, err := time.Parse(time.RFC3339, fmt.Sprint(f.calls[0].Body["expires_at"]))
-	if err != nil || exp.Sub(now) < 29*24*time.Hour || exp.Sub(now) > 31*24*time.Hour {
+	if err != nil || !exp.Equal(testNow.Add(30*24*time.Hour)) {
 		t.Errorf("--expires 30d sent %v (%v)", f.calls[0].Body["expires_at"], err)
 	}
 
@@ -222,6 +220,9 @@ func TestKeyPermissionLevels(t *testing.T) {
 		{"key", "create", "--notifications", "send", "backup"},
 		{"key", "update", testKeyID, "--scope", "manage", "--widgets=read"},
 		{"key", "create", "n", "--scope", "admin"},
+		// A bare (true) legacy flag next to a level needs a level of its own.
+		{"key", "create", "n", "--activities", "none", "--notifications"},
+		{"key", "update", testKeyID, "--widgets=read", "--emails=true"},
 	} {
 		if r := runCLI(t, srv, nil, "", argv...); r.code != ExitUsage {
 			t.Errorf("%v: exit %d, want %d (%s)", argv, r.code, ExitUsage, r.stderr)
