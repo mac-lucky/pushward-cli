@@ -1,0 +1,26 @@
+name: Skills
+
+# The go-cicd reusable skips its tests when a push changes no Go files, and
+# `npx skills add` installs straight from main, so an edit to skills/ alone
+# would reach users without TestSkillCommands ever running.
+on:
+  push:
+    branches: [main]
+    paths: ['skills/**']
+  pull_request:
+    branches: [main]
+    paths: ['skills/**']
+
+permissions:
+  contents: read
+
+jobs:
+  skill:
+    name: TestSkillCommands
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./internal/cmd -run TestSkillCommands

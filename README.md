@@ -16,6 +16,14 @@ Or `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`, or grab a
 docker run --rm -e PUSHWARD_API_TOKEN ghcr.io/mac-lucky/pushward-cli notify --title Hi --body There
 ```
 
+## Agent skill
+
+```sh
+npx skills add mac-lucky/pushward-cli --skill pushward
+```
+
+This installs a skill for Claude Code, Codex, Cursor and other agents that read `SKILL.md` files. It teaches them which command fits "ping me when the tests pass", "ask me before you push" or "show the migration on my lock screen", and to end every Live Activity they start. The agent uses the key the CLI already has, so run `pushward auth login` yourself first. To keep it away from your other activities, start it with a key of its own limited to `agent-*` slugs; the skill has the `pushward key create` line for that, and you run it, not the agent, since its output is a new key.
+
 ## Key
 
 Copy an integration key (`hlk_...`) from the app (Settings, Integration Key), then either export it or store it once:

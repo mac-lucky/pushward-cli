@@ -1,0 +1,179 @@
+---
+name: pushward
+description: Reach the user's iPhone through the pushward CLI - push notifications when a task finishes or gets stuck, a question with buttons that waits for their tap, a Live Activity on the Lock Screen and Dynamic Island showing progress, a home screen widget value, a scheduled reminder, or an email. Use when the user says things like "notify me when done", "ping my phone", "ask me before you deploy", "show progress on my lock screen", "remind me tomorrow", and a shell can run `pushward`. If PushWard MCP tools are connected instead, use those.
+---
+
+# PushWard CLI
+
+`pushward` sends to the user's own devices through the PushWard API. This skill is the
+part that decides what to send and when; the CLI does the HTTP, retries and waiting.
+
+## Before the first send
+
+```sh
+pushward version
+pushward auth status
+```
+
+Not installed: `brew install mac-lucky/tap/pushward`, or
+`go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`. Ask before installing.
+Everything below works on 1.2.0 and later.
+
+`auth status` exiting 3 means no usable key. The user has to fix that themselves, in their own
+terminal: `pushward auth login` prompts for the `hlk_` integration key from the app's
+Settings, or they export `PUSHWARD_API_TOKEN`. Never ask them to paste the key into the chat,
+and never put it on a command line; the CLI has no token flag for that reason.
+
+If they want the agent on a short leash, they can give it a key of its own. They run this
+themselves, in the shell they start the agent from, because the output is a new secret:
+
+```sh
+export PUSHWARD_API_TOKEN=$(pushward key create agent --activities manage --activity-slugs 'agent-*' \
+  --widgets=write --widget-slugs 'agent-*' --notifications=schedule --expires 90d --jq .key)
+```
+
+The variable wins over the stored key, so the agent then acts only on activities and widgets
+whose slug starts with `agent-`, which is why the examples below use that prefix. Never run
+`pushward key` commands yourself unless the user asks.
+
+## Pick the surface
+
+| The user wants | Send |
+|---|---|
+| to know when something finished or failed | `pushward notify` |
+| to be told right away that you are blocked | `pushward notify --level time-sensitive` |
+| to approve, pick an option, or type a reply | `pushward notify --action ...`, then `notification answer --wait`; or an approval Live Activity |
+| to watch a long task move | a Live Activity: `activity start`, a few `activity update`, `activity end` |
+| a number they can glance at later (coverage, queue length, spend) | `pushward widget create` once, then `widget update` |
+| a reminder later or on a repeat | `pushward schedule create --in` / `--at` / `--cron` |
+| a report or log they will read at a desk | `pushward email send` (only to addresses they verified in the app) |
+
+One notification at the end beats five along the way. Do not notify about things the user is
+watching you do in the terminal right now; notify when they would otherwise have to come back
+and check.
+
+## Notifications
+
+```sh
+pushward notify --title "Tests pass on feat/login" --body "412 passed in 3m10s" -q
+pushward notify --title "Blocked: migration needs a decision" --body "users.email has 31 duplicates" --level time-sensitive
+tail -c 4000 summary.txt | pushward notify --title "Refactor done" --body -
+pushward notify --title "Preview ready" --body "Deployed to staging" --url https://staging.example.com
+```
+
+Titles carry the news; bodies carry the one detail that matters (counts, durations, the
+branch). A body holds at most 4096 characters. `--level` is `passive`, `active` (default),
+`time-sensitive` or `critical`; keep `time-sensitive` for "I am stuck until you answer" and
+never use `critical` unless asked. `--collapse-id` replaces an earlier notification with the
+same id instead of stacking a new one.
+
+## Asking and waiting
+
+Send the question first and keep its id, then wait in steps:
+
+```sh
+id=$(pushward notify --title "Merge PR #42?" --body "CI green, 3 files changed" \
+  --action merge=Merge --action 'hold=Not yet' --jq .id)
+pushward notification answer "$id" --wait 9m --jq .action_id
+```
+
+Exit 0 prints the chosen action id. Exit 7 means no answer yet: run the same `notification
+answer` command again, which waits on the same question and sends nothing. Keep every wait
+shorter than the timeout of the tool that runs it: Claude Code kills a command after 2 minutes
+unless you give it a longer timeout (10 minutes at most), so run the one above with a
+10-minute timeout. A killed wait leaves you with no answer and no exit code. If they never
+answer, report that as "no decision", not as a no.
+
+Actions must not carry a URL if you want the answer back. To let them type a reply, add a
+button with a text field, `-F 'actions[]={"id":"reply","title":"Reply","text_input":true}'`,
+and read the reply with `--jq .text`.
+
+For a question that should sit on the Lock Screen until answered, use an approval card. Give
+every question a new slug: an approval that is started again with the same buttons keeps the
+answer from last time.
+
+```sh
+slug=agent-release-ask-$(date +%s)
+pushward activity start "$slug" --name Release --template approval --text "Ship 2.4 to production?" \
+  --option ship=Ship --option hold=Hold --ended-ttl 15m
+pushward activity wait "$slug" --timeout 9m --jq .content.answer.option
+```
+
+`activity wait` exits 7 on timeout like `notification answer`; run it again to keep waiting.
+The server ends the card shortly after the tap. If you give up, `pushward activity end "$slug"`
+so a stale question does not stay on the Lock Screen.
+
+## Progress on the Lock Screen
+
+```sh
+pushward activity start agent-auth-refactor --name "Auth refactor" --template steps \
+  --step 1/4 --step-labels Plan,Edit,Test,Commit --text Planning --stale-ttl 2h --ended-ttl 30m
+pushward activity update agent-auth-refactor --step 3/4 --text "Running 412 tests"
+pushward activity end agent-auth-refactor --status success --text "Merged as 3f2c1a9"
+```
+
+- Make the slug from the task (`agent-<repo>-<task>`), so a retry updates the same card
+  instead of starting a second one. Slugs take letters, digits, `-` and `_`, up to 128, so
+  turn `feat/login` into `feat-login`. Starting an existing slug restarts it.
+- Always pass `--ended-ttl` to `activity start`. An account holds 50 activities and an ended
+  one counts for 30 days unless `--ended-ttl` deletes it sooner; one card per task fills that
+  in a few weeks, and then every integration on the account gets `activity.limit_exceeded`.
+- Always end what you start: `--status success`, `failure` or `cancelled`, including when
+  you hit an error or the user stops you. A forgotten activity sits on their Lock Screen until
+  `--stale-ttl` ends it, which is why you set one. `activity end` is safe to run again: on an
+  activity that already ended it does nothing and exits 0.
+- `end --status` shows a final frame (green check, red cross, grey stop) for 4 seconds before
+  ending, so the last thing on screen is the outcome.
+- Update on milestones, not on every log line. Each update is a push, free accounts have a
+  monthly update allowance (`pushward me` prints usage), and `activity start` costs two.
+- Use `generic` with `--progress 0.4` for one long job with a known fraction, `steps` for a
+  sequence. The other templates and their fields: [references/live-activities.md](references/live-activities.md).
+
+## Widgets, schedules, email
+
+```sh
+pushward widget create agent-coverage --name Coverage --template progress --value 0.81 --label api
+pushward widget update agent-coverage --value 0.84
+
+pushward schedule create --in 2h --title "Check the canary" --body "Error rate after the 14:00 deploy"
+pushward schedule create --cron "0 9 * * 1-5" --tz Europe/Warsaw --title Standup --body "In 5 minutes"
+pushward schedule list
+pushward schedule cancel <id> --purge
+
+pushward email send --to ops@example.com --subject "Nightly report" --text-file report.txt
+```
+
+A scheduled notification is held by the server, so nothing needs to keep running. Cron
+sends must be at least 15 minutes apart, and an account can have 25 pending. Keep the `id`
+from the create output if you may need to cancel it.
+
+## Reading output
+
+Piped, every command prints the API response as JSON; on a terminal it prints a summary. Some
+agent shells look like a terminal, so pass `--jq <expr>` or `--json` whenever you parse the
+output. `-q` prints nothing. The `--jq` expression is checked before the request goes out.
+
+| Exit | Meaning |
+|---|---|
+| 0 | ok |
+| 1 | other error, for example a 422 validation failure or a full account |
+| 2 | bad usage |
+| 3 | the key is missing or invalid, or it may not do this (a 403) |
+| 4 | not found |
+| 5 | rate limited or out of quota |
+| 6 | server error or network failure |
+| 7 | a wait ran out |
+
+On exit 3, read the error code on stderr before asking the user to log in again: a slug
+outside the key's `agent-*` limit or a missing permission gives a 403 with its own code.
+
+429s and 503s are already retried for up to a minute. Do not wrap a send in your own retry
+loop: a POST that failed with exit 6 may still have delivered, and a second try sends the
+notification twice.
+
+Anything without a dedicated flag goes in with `-f key=value` (string), `-F key=value` (typed:
+numbers, booleans, null, JSON) or `--data` (a JSON body, `@file` or `-`). `--data` is applied
+first, then the command's own flags, then `-f`, then `-F`; later ones win. `-F key=@file` reads
+the file as a string; for JSON from a file use `-F "key=$(cat file.json)"` or `--data @file`.
+`pushward api <path>` reaches endpoints that have no command yet, and
+`pushward <command> --help` is the reference for every flag.
