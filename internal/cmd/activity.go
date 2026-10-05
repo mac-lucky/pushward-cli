@@ -163,7 +163,9 @@ func newActivityCreateCmd(a *App) *cobra.Command {
 		Use:   "create <slug>",
 		Short: "Create an activity (it shows on devices after its first update)",
 		Long: `Create an activity. Creating a slug that already exists refreshes its
-name, priority and TTLs instead of failing.
+name, priority and TTLs instead of failing. With --target-* it also replaces
+the stored target at once (devices that lose it end it, devices that gain it
+start it); without them the stored target stays.
 
 A new activity has no content: nothing shows on a device until an update
 sets a template. "activity start" does both in one step.`,
@@ -171,7 +173,7 @@ sets a template. "activity start" does both in one step.`,
 		Annotations: map[string]string{"operation": "createActivity"},
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
-			conv, err := collectFields(cmd, activityLifecycleFields, a.Now())
+			conv, err := collectFields(cmd, slices.Concat(activityLifecycleFields, targetFields), a.Now())
 			if err != nil {
 				return err
 			}
@@ -190,13 +192,14 @@ sets a template. "activity start" does both in one step.`,
 	}
 	c.Flags().StringVar(&name, "name", "", "display name (default: the slug)")
 	addFields(c, activityLifecycleFields)
+	addFields(c, targetFields)
 	bf.register(c)
 	return c
 }
 
 func newActivityUpdateCmd(a *App) *cobra.Command {
 	var bf bodyFlags
-	var upsert bool
+	var upsert, noTarget bool
 	var state, sound string
 	c := &cobra.Command{
 		Use:   "update <slug>",
@@ -210,9 +213,15 @@ keep their stored value, and null clears one.
 		Annotations: map[string]string{"operation": "updateActivity"},
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
-			conv, err := collectFields(cmd, slices.Concat(activityContentFields, activityLifecycleFields), a.Now())
+			conv, err := collectFields(cmd, slices.Concat(activityContentFields, activityLifecycleFields, targetFields), a.Now())
 			if err != nil {
 				return err
+			}
+			if noTarget {
+				if _, set := conv["target"]; set {
+					return usagef("--no-target cannot be used with --target-groups, --target-tags or --target-members")
+				}
+				conv["target"] = nil
 			}
 			if err := setLifecycleState(conv, state); err != nil {
 				return err
@@ -244,8 +253,10 @@ keep their stored value, and null clears one.
 	c.Flags().BoolVar(&upsert, "upsert", false, "create the activity first if it does not exist (needs activity:manage)")
 	c.Flags().StringVar(&state, "state", "", "lifecycle state: ongoing or ended")
 	c.Flags().StringVar(&sound, "sound", "", "alert sound: default, chime, alert, success, warning, bell, ding, buzz, notification")
+	c.Flags().BoolVar(&noTarget, "no-target", false, "organization keys: clear the target, so everyone the routing rules allow gets it")
 	addFields(c, activityContentFields)
 	addFields(c, activityLifecycleFields)
+	addFields(c, targetFields)
 	addOptionFlag(c)
 	bf.register(c)
 	return c
@@ -305,12 +316,14 @@ func newActivityStartCmd(a *App) *cobra.Command {
 Starting a slug that already exists restarts it with the new content.
 
 --template defaults to generic. -f, -F and --data apply to the update body.
+--target-* go with the create, so a restart can change the target; a target
+in -f, -F or --data goes with the update instead, so use one or the other.
 
   pushward activity start backup --name "Nightly backup" --text "Copying" --progress 0`,
 		Args: checkArgs,
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
-			create, err := collectFields(cmd, activityLifecycleFields, a.Now())
+			create, err := collectFields(cmd, slices.Concat(activityLifecycleFields, targetFields), a.Now())
 			if err != nil {
 				return err
 			}
@@ -325,6 +338,9 @@ Starting a slug that already exists restarts it with the new content.
 			b, err := bf.build(a, patch)
 			if err != nil {
 				return err
+			}
+			if _, ok := b["target"]; ok && create["target"] != nil {
+				return usagef("use --target-* or a target in -f, -F or --data, not both")
 			}
 			if str(b, "content", "template") == "" {
 				if err := body.Set(b, "content.template", "generic"); err != nil {
@@ -346,6 +362,7 @@ Starting a slug that already exists restarts it with the new content.
 	c.Flags().StringVar(&name, "name", "", "display name (default: the slug)")
 	addFields(c, activityContentFields)
 	addFields(c, activityLifecycleFields)
+	addFields(c, targetFields)
 	addOptionFlag(c)
 	bf.register(c)
 	return c

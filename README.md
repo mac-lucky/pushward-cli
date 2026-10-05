@@ -110,6 +110,15 @@ pushward email send --to ops@example.com --subject "Nightly report" --text-file 
 
 Email only goes to recipients you have verified in the app.
 
+## Organization keys
+
+With a key from a PushWard organization (a team account), `notify`, `schedule create`, `activity create`, `activity start` and `activity update` take `--target-groups`, `--target-tags` and `--target-members` (comma-separated group names, device tag names or user ids) to narrow who receives it. `activity update --no-target` clears the target again, which needs a key that reaches the whole organization. A personal key gets a 422 for the target flags.
+
+```sh
+pushward notify --title "db-1 disk at 95%" --body "Paging on-call" --target-groups oncall
+pushward activity update deploy --target-tags wall
+```
+
 ## Request bodies
 
 Every write command takes the same four layers, later ones winning: `--data` (JSON literal, `@file` or `-` for stdin), the command's own flags, `-f key=value` (always a string) and `-F key=value` (typed: numbers, `true`/`false`/`null`, JSON literals, `@file`). Keys are dotted paths; `key[]` appends to an array and `key[2]` sets an index.

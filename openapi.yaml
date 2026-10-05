@@ -2690,6 +2690,9 @@ components:
           maximum: 2592000
           minimum: 1
           type: integer
+        target:
+          $ref: "#/components/schemas/OrgTargetRequest"
+          description: "Organization keys only: who the Live Activity reaches, narrowing the organization's routing rules. Omit to reach everyone the rules allow (or, for a key limited to some groups and tags, all of those). Re-POSTing an existing slug without it keeps the stored target."
       required:
         - slug
         - name
@@ -2800,6 +2803,9 @@ components:
           description: Notification subtitle
           maxLength: 256
           type: string
+        target:
+          $ref: "#/components/schemas/OrgTargetRequest"
+          description: "Organization keys only: who receives it, narrowing the organization's routing rules. Omit to reach everyone the rules allow (or, for a key limited to some groups and tags, all of those)."
         thread_id:
           description: Thread identifier for grouping
           maxLength: 128
@@ -2889,6 +2895,9 @@ components:
           description: Notification subtitle
           maxLength: 256
           type: string
+        target:
+          $ref: "#/components/schemas/OrgTargetRequest"
+          description: "Organization keys only: who receives it, narrowing the organization's routing rules. Omit to reach everyone the rules allow (or, for a key limited to some groups and tags, all of those)."
         thread_id:
           description: Thread identifier for grouping
           maxLength: 128
@@ -3142,6 +3151,9 @@ components:
           examples:
             - activity:manage
           type: string
+        target:
+          $ref: "#/components/schemas/OrgTarget"
+          description: "Organization keys only: the groups and device tags the key works within. Everything it sends must target inside them, and it lists, reads and changes only activities targeted inside them. Omitted when the key reaches the whole organization."
         widget_slugs:
           description: Widget slugs or patterns the key is restricted to. Omitted when unrestricted.
           items:
@@ -3283,6 +3295,9 @@ components:
           examples:
             - activity:manage
           type: string
+        target:
+          $ref: "#/components/schemas/OrgTarget"
+          description: "Organization keys only: the groups and device tags the key works within. Everything it sends must target inside them, and it lists, reads and changes only activities targeted inside them. Omitted when the key reaches the whole organization."
         widget_slugs:
           description: Widget slugs or patterns the key is restricted to. Omitted when unrestricted.
           items:
@@ -3595,6 +3610,61 @@ components:
         - notification_id
         - status
       type: object
+    OrgTarget:
+      additionalProperties: false
+      properties:
+        group_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        member_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        tag_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - group_ids
+        - tag_ids
+      type: object
+    OrgTargetRequest:
+      additionalProperties: false
+      properties:
+        groups:
+          description: Names of the organization's groups whose members receive it.
+          examples:
+            - - oncall
+          items:
+            type: string
+          maxItems: 20
+          type:
+            - array
+            - "null"
+        members:
+          description: User ids of members who receive it on all their devices.
+          items:
+            type: string
+          maxItems: 100
+          type:
+            - array
+            - "null"
+        tags:
+          description: Names of the organization's device tags; devices with any of them receive it.
+          items:
+            type: string
+          maxItems: 20
+          type:
+            - array
+            - "null"
+      type: object
     Problem:
       additionalProperties: false
       properties:
@@ -3740,7 +3810,7 @@ components:
           readOnly: true
           type: string
         failure_reason:
-          description: "Why the notification (for a repeating schedule: the latest occurrence) was not sent. key_revoked: the integration key that scheduled it was revoked or lost the notifications capability."
+          description: "Why the notification (for a repeating schedule: the latest occurrence) was not sent. key_revoked: the integration key that scheduled it was revoked, expired, or no longer has notifications level schedule."
           enum:
             - quota_exceeded
             - key_revoked
@@ -3835,6 +3905,9 @@ components:
           description: Notification subtitle
           maxLength: 256
           type: string
+        target:
+          $ref: "#/components/schemas/OrgTargetRequest"
+          description: "Organization keys only: who receives it, narrowing the organization's routing rules. Omit to reach everyone the rules allow (or, for a key limited to some groups and tags, all of those)."
         thread_id:
           description: Thread identifier for grouping
           maxLength: 128
@@ -4045,6 +4118,9 @@ components:
         state:
           description: Target state. Accepts ongoing or ended (case-insensitive). Optional - if omitted, the current stored state is kept. Setting ended on an ongoing activity ends the Live Activity; the card then stays on the Lock Screen for dismissal_ttl seconds (or ended_ttl capped at 4h when dismissal_ttl is unset).
           type: string
+        target:
+          $ref: "#/components/schemas/OrgTargetRequest"
+          description: "Organization keys only: who the Live Activity reaches, narrowing the organization's routing rules. Tri-state: omit to keep, null to clear (everyone the rules allow), object to replace. Devices that lose it end it; devices that gain it start it."
       type: object
     UpdateIntegrationKeyInputBody:
       additionalProperties: false

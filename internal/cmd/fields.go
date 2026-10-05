@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ const (
 	kUnix        // RFC 3339, unix seconds, or a duration from now -> unix seconds
 	kRFC3339     // RFC 3339, unix seconds, or a duration from now -> RFC 3339 (UTC)
 	kCSV         // a,b,c -> ["a","b","c"]
+	kNames       // like kCSV, but an empty item is an error
 	kStep        // 2 -> current_step, 2/5 -> current_step and total_steps
 )
 
@@ -102,10 +104,20 @@ func setField(obj map[string]any, f field, raw string, now time.Time) error {
 			return err
 		}
 		v = t.UTC().Format(time.RFC3339)
-	case kCSV:
+	case kCSV, kNames:
+		// A blank name is an error, not skipped: dropping it could turn a
+		// target or a slug restriction into "everything". A blank step label
+		// is fine (that step shows N/M).
+		if f.kind == kNames && strings.TrimSpace(raw) == "" {
+			return fmt.Errorf("no names given; leave the flag out instead")
+		}
 		var list []any
 		for s := range strings.SplitSeq(raw, ",") {
-			list = append(list, strings.TrimSpace(s))
+			s = strings.TrimSpace(s)
+			if f.kind == kNames && s == "" {
+				return fmt.Errorf("empty name in %q", raw)
+			}
+			list = append(list, s)
 		}
 		v = list
 	case kStep:
@@ -256,7 +268,17 @@ var activityLifecycleFields = []field{
 	{"dismissal-ttl", "dismissal_ttl", kSecondsZero, "keep it on the Lock Screen this long after it ends (max 4h)"},
 }
 
-var notificationFields = []field{
+// targetFields narrow who an organization key's activity or notification
+// reaches. A personal account's key gets a 422 for them.
+var targetFields = []field{
+	{"target-groups", "target.groups", kNames, "organization keys: comma-separated names of the groups that get it"},
+	{"target-tags", "target.tags", kNames, "organization keys: comma-separated device tag names; devices with any of them get it"},
+	{"target-members", "target.members", kNames, "organization keys: comma-separated user ids of the members that get it"},
+}
+
+var notificationFields = slices.Concat(notificationBaseFields, targetFields)
+
+var notificationBaseFields = []field{
 	{"title", "title", kString, "title (required)"},
 	{"subtitle", "subtitle", kString, "subtitle"},
 	{"level", "level", kString, "interruption level: passive, active, time-sensitive, critical"},

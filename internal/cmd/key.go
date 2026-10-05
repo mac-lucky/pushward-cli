@@ -40,8 +40,8 @@ can also be limited to activity and widget slugs and given an expiry.
 
 var keyFields = []field{
 	{"scope", "scope", kString, "legacy form of --activities: activity:none, activity:read, activity:update or activity:manage"},
-	{"activity-slugs", "activity_slugs", kCSV, "comma-separated activity slugs or trailing-* patterns the key is limited to"},
-	{"widget-slugs", "widget_slugs", kCSV, "comma-separated widget slugs or trailing-* patterns the key is limited to"},
+	{"activity-slugs", "activity_slugs", kNames, "comma-separated activity slugs or trailing-* patterns the key is limited to"},
+	{"widget-slugs", "widget_slugs", kNames, "comma-separated widget slugs or trailing-* patterns the key is limited to"},
 	{"expires", "expires_at", kRFC3339, "when the key stops working: an RFC 3339 time (2026-12-31T00:00:00Z), unix seconds, or a duration from now (90d, 12h)"},
 }
 
