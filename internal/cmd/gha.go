@@ -107,8 +107,11 @@ func (a *App) runGHA() error {
 	token := in("token")
 	if token != "" {
 		gha.Mask(a.Stdout, token)
-		// receipt secret prints the callback secret derived from it.
-		gha.Mask(a.Stdout, callback.Secret(token))
+		// receipt secret prints the callback secret derived from it, and a
+		// receiver may log the part after whsec_ on its own.
+		secret := callback.Secret(token)
+		gha.Mask(a.Stdout, secret)
+		gha.Mask(a.Stdout, strings.TrimPrefix(secret, "whsec_"))
 	}
 	e2eKey := in("e2e-key")
 	for _, l := range gha.Lines(e2eKey) {

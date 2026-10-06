@@ -232,8 +232,10 @@ func TestGHAAck(t *testing.T) {
 	if mustJSON(t, b["acknowledge"]) != `{"repeat_seconds":120}` || mustJSON(t, b["tags"]) != `["deploy","prod"]` || b["callback_url"] != "https://hooks.example.com/pw" {
 		t.Errorf("body %v", b)
 	}
-	if !strings.Contains(r.stdout, "::add-mask::whsec_I1p3Yj83UaqkDUbjL1juMcCeRaMo2WAxaTS/hpRZYfA=\n") {
-		t.Errorf("callback secret not masked:\n%s", r.stdout)
+	for _, mask := range []string{"whsec_I1p3Yj83UaqkDUbjL1juMcCeRaMo2WAxaTS/hpRZYfA=", "I1p3Yj83UaqkDUbjL1juMcCeRaMo2WAxaTS/hpRZYfA="} {
+		if !strings.Contains(r.stdout, "::add-mask::"+mask+"\n") {
+			t.Errorf("callback secret not masked as %s:\n%s", mask, r.stdout)
+		}
 	}
 	if o := readOutputs(t, out); o["id"] != "9" || o["status"] != "acknowledged" || o["answer"] != "pw_ack" {
 		t.Errorf("outputs %v", o)
