@@ -70,6 +70,20 @@ answer=$(pushward notify --title "Deploy to prod?" --body v2.4.0 \
 
 Nobody answering in time exits 7. `pushward notification answer <id> --wait 5m` picks up the same answer later.
 
+## Repeat until acknowledged
+
+With `--ack`, `notify` and `schedule create` send the notification again and again until someone taps Acknowledge on one of the devices, or until it expires. It repeats every minute for an hour unless `--ack-repeat` (30s to 1h) and `--ack-expire` (1m to 3h) say otherwise, and the repeats do not count against your quota. Any other button without a url acknowledges it too.
+
+```sh
+pushward notify --title "db-1 down" --body "Primary unreachable" --level time-sensitive --ack --ack-repeat 2m --tag db-1
+pushward receipt 42 --wait 10m      # acknowledged, or exit 7 once it expires
+pushward receipt cancel --tag db-1  # db-1 is back: stop repeating
+```
+
+`notify --ack --wait` blocks until it is acknowledged. `pushward receipt get <id>` (or just `pushward receipt <id>`) shows who acknowledged it and when, and `receipt cancel <id>` stops one. A key can have 25 repeating at once, and a new one with the same `--collapse-id` replaces the old one's repeats.
+
+`--callback-url https://...` gets a POST when it is acknowledged or expires, signed like [Standard Webhooks](https://www.standardwebhooks.com/). `pushward receipt secret` prints the `whsec_` secret to check the signature with. It is derived from the integration key, nothing is stored, and rolling the key gives a new one. Account keys (`hla_`) cannot set a callback.
+
 ## Live Activities
 
 ```sh
@@ -130,9 +144,9 @@ pushward e2e key-id              # compare with the Key ID the app shows
 pushward notify --title "Prod DB password rotated" --body "New one is in the vault under db/prod"
 ```
 
-The key comes from `PUSHWARD_E2E_KEY`, then the config file. Once one is set, every notification is encrypted: `--no-encrypt` sends one without it, and `--encrypt` fails instead of sending in the clear when no key is set. `pushward api` never encrypts. `pushward e2e encrypt` and `pushward e2e decrypt` seal and open envelopes for other tools, and [internal/e2e/testdata/vectors-v1.json](internal/e2e/testdata/vectors-v1.json) holds the test vectors for anyone writing their own.
+The key comes from `PUSHWARD_E2E_KEY`, then the config file; in the GitHub Action, pass it from a secret as the `e2e-key` input. Once one is set, every notification is encrypted: `--no-encrypt` sends one without it, and `--encrypt` fails instead of sending in the clear when no key is set. `pushward api` never encrypts. `pushward e2e encrypt` and `pushward e2e decrypt` seal and open envelopes for other tools, and [internal/e2e/testdata/vectors-v1.json](internal/e2e/testdata/vectors-v1.json) holds the test vectors for anyone writing their own.
 
-The sealed text has to fit a 3072-character envelope, about 2.2 KB, so a long body only goes out unencrypted. Organization keys cannot send encrypted notifications yet.
+The sealed text has to fit a 3072-character envelope, about 2.2 KB. A longer body is refused before anything is sent; shorten it, or send it with `--no-encrypt`. Organization keys cannot send encrypted notifications yet.
 
 ## Request bodies
 
@@ -164,7 +178,7 @@ Exit codes are stable, so scripts can branch on them:
 | 4 | not found |
 | 5 | rate limited or out of quota |
 | 6 | server error or network failure |
-| 7 | `--wait` ran out |
+| 7 | `--wait` ran out, or the notification expired or was canceled before anyone acknowledged it |
 
 Rate limits (429) and 503s are retried for up to a minute, honoring `Retry-After`. Other server errors and network failures are only retried for reads and deletes: retrying a POST could send a notification twice.
 

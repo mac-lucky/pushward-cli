@@ -17,7 +17,8 @@ pushward auth status
 
 Not installed: `brew install mac-lucky/tap/pushward`, or
 `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`. Ask before installing.
-Everything below works on 1.2.0 and later; the organization target flags need 1.3.0.
+Everything below works on 1.2.0 and later; the organization target flags need 1.3.0, and
+encryption and `--ack` need 1.4.0.
 
 `auth status` exiting 3 means no usable key. The user has to fix that themselves, in their own
 terminal: `pushward auth login` prompts for the `hlk_` integration key from the app's
@@ -42,6 +43,7 @@ whose slug starts with `agent-`, which is why the examples below use that prefix
 |---|---|
 | to know when something finished or failed | `pushward notify` |
 | to be told right away that you are blocked | `pushward notify --level time-sensitive` |
+| an alert that must not go unseen (an outage, a failed backup) | `pushward notify --ack`, repeating until they acknowledge it |
 | to approve, pick an option, or type a reply | `pushward notify --action ...`, then `notification answer --wait`; or an approval Live Activity |
 | to watch a long task move | a Live Activity: `activity start`, a few `activity update`, `activity end` |
 | a number they can glance at later (coverage, queue length, spend) | `pushward widget create` once, then `widget update` |
@@ -102,6 +104,29 @@ pushward activity wait "$slug" --timeout 9m --jq .content.answer.option
 `activity wait` exits 7 on timeout like `notification answer`; run it again to keep waiting.
 The server ends the card shortly after the tap. If you give up, `pushward activity end "$slug"`
 so a stale question does not stay on the Lock Screen.
+
+## Repeating until acknowledged
+
+`--ack` sends the notification again (every minute by default) until someone taps Acknowledge
+on one of their devices, or until it expires (after an hour by default). Keep it for alerts
+that must not be missed; a finished task is not one.
+
+```sh
+id=$(pushward notify --title "Backup failed on nas-1" --body "rsync exit 23, 0 of 412 GB copied" \
+  --level time-sensitive --ack --ack-repeat 5m --ack-expire 2h --tag nas-1 --jq .id)
+pushward receipt get "$id" --wait 9m --jq .status
+pushward receipt cancel --tag nas-1
+```
+
+`--ack-repeat` takes 30s to 1h and `--ack-expire` 1m to 3h; repeats do not use up the quota.
+`--action` buttons without a url acknowledge it too, and the receipt's `action_id` says which
+one was tapped. `receipt get --wait` exits 7 when the wait runs out, as `notification answer`
+does, and also when the alert expired or was canceled unacknowledged (`--jq .status` tells
+which). When the problem clears on its own, cancel the repeats by id
+(`pushward receipt cancel 42`) or by tag. A key can have 25 alerts repeating at once
+(`notification_receipt.limit_exceeded` beyond that), and a new one with the same
+`--collapse-id` replaces the old one's repeats. `--callback-url` and `pushward receipt secret`
+are for the user's own webhook receivers.
 
 ## Progress on the Lock Screen
 
@@ -202,7 +227,7 @@ output. `-q` prints nothing. The `--jq` expression is checked before the request
 | 4 | not found |
 | 5 | rate limited or out of quota |
 | 6 | server error or network failure |
-| 7 | a wait ran out |
+| 7 | a wait ran out, or an alert sent with `--ack` ended unacknowledged |
 
 On exit 3, read the error code on stderr before asking the user to log in again: a slug
 outside the key's `agent-*` limit or a missing permission gives a 403 with its own code.
