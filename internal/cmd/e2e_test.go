@@ -305,3 +305,27 @@ func TestE2EEncryptDecrypt(t *testing.T) {
 		t.Errorf("JSON without encrypted: exit %d", r.code)
 	}
 }
+
+func TestReadKeyLines(t *testing.T) {
+	for name, tc := range map[string]struct {
+		lines []string
+		reads int
+		ok    bool
+	}{
+		"one line":     {[]string{testE2EKey, "never read"}, 1, true},
+		"two lines":    {[]string{"0001 0203 0405 0607 0809 0A0B 0C0D 0E0F", "1011 1213 1415 1617 1819 1A1B 1C1D 1E1F", "never read"}, 2, true},
+		"gave up":      {[]string{testE2EKey[:20], ""}, 2, false},
+		"not hex":      {[]string{"hlk_abc", "never read"}, 1, false},
+		"empty prompt": {[]string{""}, 1, false},
+	} {
+		reads := 0
+		got, err := readKeyLines(func() ([]byte, error) {
+			reads++
+			return []byte(tc.lines[reads-1]), nil
+		}, func(int) {})
+		k, perr := e2e.ParseKey(got)
+		if err != nil || reads != tc.reads || (perr == nil) != tc.ok || (tc.ok && k.Hex() != testE2EKey) {
+			t.Errorf("%s: %d reads, %q, %v %v", name, reads, got, err, perr)
+		}
+	}
+}

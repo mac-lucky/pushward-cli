@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/mac-lucky/pushward-cli/internal/body"
 	"github.com/mac-lucky/pushward-cli/internal/config"
@@ -204,14 +205,15 @@ func newE2EImportCmd(a *App) *cobra.Command {
 		Short: "Store an encryption key created in the app",
 		Long: `Read an encryption key (64 hex characters; spaces and line breaks are
 ignored) and store it in the config file (mode 0600). On a terminal it
-prompts without echoing; otherwise it reads stdin.
+prompts without echoing and reads until it has the whole key, so a key
+pasted over several lines is fine; otherwise it reads stdin.
 
   pbpaste | pushward e2e import`,
 		Args: checkArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			var raw string
 			if a.StdinTTY {
-				s, err := a.readSecret("Paste your encryption key: ", false)
+				s, err := a.readE2EKey()
 				if err != nil {
 					return err
 				}
@@ -246,6 +248,48 @@ prompts without echoing; otherwise it reads stdin.
 	}
 	c.Flags().BoolVar(&force, "force", false, "replace a different key already stored")
 	return c
+}
+
+// readE2EKey prompts for an encryption key without echoing it, and keeps
+// reading lines until it has 64 hex characters. A key pasted over several
+// lines then arrives whole, instead of the rest of it going to the shell.
+// An empty line or anything that is not hex stops it, and ParseKey says
+// what is wrong.
+func (a *App) readE2EKey() (string, error) {
+	f, ok := a.Stdin.(*os.File)
+	if !ok {
+		return "", errors.New("stdin is not a terminal")
+	}
+	fmt.Fprint(a.Stderr, "Paste your encryption key: ")
+	return readKeyLines(func() ([]byte, error) {
+		line, err := term.ReadPassword(int(f.Fd())) // #nosec G115 -- a file descriptor fits in int
+		fmt.Fprintln(a.Stderr)
+		return line, err
+	}, func(n int) {
+		fmt.Fprintf(a.Stderr, "%d of 64 hex characters, paste the rest: ", n)
+	})
+}
+
+// readKeyLines is the loop behind readE2EKey, apart from the terminal.
+func readKeyLines(next func() ([]byte, error), more func(have int)) (string, error) {
+	var got strings.Builder
+	for {
+		line, err := next()
+		if err != nil {
+			return "", err
+		}
+		got.Write(line)
+		got.WriteByte('\n')
+		h := strings.Join(strings.Fields(got.String()), "")
+		if len(h) >= 64 || len(strings.TrimSpace(string(line))) == 0 || strings.IndexFunc(h, notHex) >= 0 {
+			return got.String(), nil
+		}
+		more(len(h))
+	}
+}
+
+func notHex(r rune) bool {
+	return !('0' <= r && r <= '9' || 'a' <= r && r <= 'f' || 'A' <= r && r <= 'F')
 }
 
 func newE2EKeyIDCmd(a *App) *cobra.Command {
