@@ -10,6 +10,9 @@ import (
 	"github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
 
+	"github.com/mac-lucky/pushward-cli/internal/callback"
+	"github.com/mac-lucky/pushward-cli/internal/config"
+	"github.com/mac-lucky/pushward-cli/internal/e2e"
 	"github.com/mac-lucky/pushward-cli/internal/gha"
 )
 
@@ -35,8 +38,46 @@ var inputFlags = []struct {
 	{"status", []string{"status"}, false},
 	{"wait", []string{"wait", "timeout"}, false},
 	{"actions", []string{"action", "option"}, true},
+	{"ack", []string{"ack"}, false},
+	{"ack-repeat", []string{"ack-repeat"}, false},
+	{"ack-expire", []string{"ack-expire"}, false},
+	{"ack-title", []string{"ack-title"}, false},
+	{"tags", []string{"tag"}, true},
+	{"callback-url", []string{"callback-url"}, false},
 	{"fields", []string{"raw-field"}, true},
 	{"json", []string{"data"}, false},
+}
+
+// sealedFlags carry text an encryption key seals: the notification fields
+// and the generic body inputs that can set them. The debug line hides their
+// values when the run encrypts.
+var sealedFlags = map[string]bool{
+	"--title": true, "--subtitle": true, "--body": true, "--url": true,
+	"--data": true, "--field": true, "--raw-field": true,
+	"-d": true, "-f": true, "-F": true,
+}
+
+// redactSealed returns argv with the values of sealedFlags replaced.
+func redactSealed(argv []string) []string {
+	out := slices.Clone(argv)
+	for i := 0; i < len(out); i++ {
+		w := out[i]
+		if w == "--" {
+			break
+		}
+		name, _, hasValue := strings.Cut(w, "=")
+		switch {
+		case sealedFlags[name] && hasValue:
+			out[i] = name + "=***"
+		case sealedFlags[name] && i+1 < len(out):
+			i++
+			out[i] = "***"
+		case len(w) > 2 && w[0] == '-' && w[1] != '-' && sealedFlags[w[:2]]:
+			// -dVALUE
+			out[i] = w[:2] + "***"
+		}
+	}
+	return out
 }
 
 func newGHACmd(a *App) *cobra.Command {
@@ -58,6 +99,15 @@ func (a *App) runGHA() error {
 	token := in("token")
 	if token != "" {
 		gha.Mask(a.Stdout, token)
+		// receipt secret prints the callback secret derived from it.
+		gha.Mask(a.Stdout, callback.Secret(token))
+	}
+	e2eKey := in("e2e-key")
+	for _, l := range gha.Lines(e2eKey) {
+		gha.Mask(a.Stdout, l)
+	}
+	if k, err := e2e.ParseKey(e2eKey); err == nil && k.Hex() != e2eKey {
+		gha.Mask(a.Stdout, k.Hex())
 	}
 	failOnError := in("fail-on-error") != "false"
 
@@ -68,14 +118,18 @@ func (a *App) runGHA() error {
 	if err != nil {
 		return a.ghaFail(err, failOnError)
 	}
-	fmt.Fprintf(a.Stdout, "::debug::pushward %s\n", gha.EscapeData(strings.Join(argv, " ")))
+	shown := argv
+	if e2eKey != "" || strings.TrimSpace(a.Getenv(config.EnvE2EKey)) != "" {
+		shown = redactSealed(argv)
+	}
+	fmt.Fprintf(a.Stdout, "::debug::pushward %s\n", gha.EscapeData(strings.Join(shown, " ")))
 
 	var out bytes.Buffer
 	run := &App{
 		Version: a.Version, Commit: a.Commit, Date: a.Date,
 		Stdin: a.Stdin, Stdout: &out, Stderr: a.Stderr,
-		HTTP: a.HTTP, Now: a.Now, Sleep: a.Sleep, Getenv: a.Getenv,
-		token: token, apiURL: in("api-url"),
+		HTTP: a.HTTP, Now: a.Now, Sleep: a.Sleep, Getenv: a.Getenv, Rand: a.Rand,
+		token: token, e2eKey: e2eKey, apiURL: in("api-url"),
 	}
 	root := NewRoot(run)
 	root.SetArgs(argv)
@@ -126,8 +180,9 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 	if len(words) == 0 {
 		return nil, "", usagef("command input is empty")
 	}
+	// e2e prints keys and decrypted text, which do not belong in a job log.
 	switch words[0] {
-	case "auth", "completion", "gha", "help", "version":
+	case "auth", "completion", "e2e", "gha", "help", "version":
 		return nil, "", usagef("command %q is not available in the Action", words[0])
 	}
 

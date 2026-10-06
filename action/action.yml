@@ -51,6 +51,29 @@ inputs:
     description: >-
       Answer buttons, one id=Title per line. Notification actions, or the
       options of an approval activity.
+  ack:
+    description: >-
+      Set to true to repeat the notification until someone acknowledges it on
+      a device or it expires. With wait, the step waits for the acknowledgement.
+  ack-repeat:
+    description: How often an acknowledged notification repeats, 30s to 1h (default 1m). Implies ack.
+  ack-expire:
+    description: When an acknowledged notification stops repeating, 1m to 3h (default 1h). Implies ack.
+  ack-title:
+    description: Title of the acknowledge button (default Acknowledge). Implies ack.
+  tags:
+    description: >-
+      Tags of an acknowledged notification, one per line, for
+      "receipt cancel --tag <tag>".
+  callback-url:
+    description: >-
+      https URL that gets a signed POST when an acknowledged notification is
+      acknowledged or expires. "receipt secret" prints the signing secret.
+  e2e-key:
+    description: >-
+      End-to-end encryption key (64 hex characters) from the PushWard app.
+      Pass it from a secret. notify and schedule create then encrypt the
+      title, subtitle, body and url; devices without the key show a placeholder.
   fields:
     description: >-
       Extra typed fields, one key=value per line, with dotted keys

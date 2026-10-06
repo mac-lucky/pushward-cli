@@ -126,6 +126,7 @@ func TestGHAGuards(t *testing.T) {
 	}{
 		"no token":         {map[string]string{"command": "notify"}, "token input is required"},
 		"auth refused":     {map[string]string{"token": "hlk", "command": "auth login"}, "not available"},
+		"e2e refused":      {map[string]string{"token": "hlk", "command": "e2e generate"}, "not available"},
 		"unknown":          {map[string]string{"token": "hlk", "command": "frobnicate"}, "unknown command"},
 		"group only":       {map[string]string{"token": "hlk", "command": "activity"}, "unknown command"},
 		"url in command":   {map[string]string{"token": "hlk", "command": "notify --api-url https://evil.example"}, "api-url input"},
@@ -171,6 +172,67 @@ func TestGHAWaitForAnswer(t *testing.T) {
 	}
 	o := readOutputs(t, out)
 	if o["answer"] != "skip" || o["answer-text"] != "not today" || o["id"] != "8" || o["status"] != "answered" {
+		t.Errorf("outputs %v", o)
+	}
+}
+
+func TestGHAEncrypts(t *testing.T) {
+	f, srv := newFake(t)
+	t.Setenv("PUSHWARD_E2E_KEY", "")
+	f.reply("POST /notifications", 201, `{"id":5,"delivery":"all"}`)
+	env, _ := ghaEnv(t, map[string]string{"token": "hlk_action", "e2e-key": strings.ToUpper(testE2EKey),
+		"title": "Prod DB password rotated", "body": "new one in the vault", "fields": "subtitle=db/prod"})
+	r := runCLI(t, srv, env, "", "gha")
+	if r.code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	for _, mask := range []string{"::add-mask::" + strings.ToUpper(testE2EKey) + "\n", "::add-mask::" + testE2EKey + "\n"} {
+		if !strings.Contains(r.stdout, mask) {
+			t.Errorf("key not masked as %q:\n%s", mask, r.stdout)
+		}
+	}
+	for _, plain := range []string{"rotated", "vault", "db/prod", "actions/runs"} {
+		if strings.Contains(r.stdout, plain) {
+			t.Errorf("%q in the log:\n%s", plain, r.stdout)
+		}
+	}
+	if !strings.Contains(r.stdout, "--title=*** --body=*** --raw-field=*** --url=***") {
+		t.Errorf("debug line not redacted:\n%s", r.stdout)
+	}
+	m := openSent(t, testE2EKey, f.calls[0].Body)
+	if m.Title != "Prod DB password rotated" || m.Subtitle != "db/prod" || m.URL != "https://github.com/mac-lucky/demo/actions/runs/42" {
+		t.Errorf("sealed %+v", m)
+	}
+	if f.calls[0].Body["source"] != "github-actions" {
+		t.Errorf("body %v", f.calls[0].Body)
+	}
+}
+
+func TestRedactSealed(t *testing.T) {
+	got := strings.Join(redactSealed([]string{"notify", "--title", "a", "--body=b", "-d", "{}", "-fsubtitle=c", "--level", "active", "-F", "x=1", "--", "--title"}), " ")
+	if want := "notify --title *** --body=*** -d *** -f*** --level active -F *** -- --title"; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestGHAAck(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("POST /notifications", 201, `{"id":9,"receipt":{"notification_id":9,"status":"active"}}`)
+	f.reply("GET /notifications/receipts/9", 200, `{"notification_id":9,"status":"acknowledged","action_id":"pw_ack"}`)
+	env, out := ghaEnv(t, map[string]string{"token": "hlk_0123456789abcdef0123456789abcdef", "title": "a", "body": "b",
+		"ack": "true", "ack-repeat": "2m", "tags": "deploy\nprod\n", "callback-url": "https://hooks.example.com/pw", "wait": "5m"})
+	r := runCLI(t, srv, env, "", "gha")
+	if r.code != 0 {
+		t.Fatalf("exit %d\n%s", r.code, r.stdout)
+	}
+	b := f.calls[0].Body
+	if mustJSON(t, b["acknowledge"]) != `{"repeat_seconds":120}` || mustJSON(t, b["tags"]) != `["deploy","prod"]` || b["callback_url"] != "https://hooks.example.com/pw" {
+		t.Errorf("body %v", b)
+	}
+	if !strings.Contains(r.stdout, "::add-mask::whsec_I1p3Yj83UaqkDUbjL1juMcCeRaMo2WAxaTS/hpRZYfA=\n") {
+		t.Errorf("callback secret not masked:\n%s", r.stdout)
+	}
+	if o := readOutputs(t, out); o["id"] != "9" || o["status"] != "acknowledged" || o["answer"] != "pw_ack" {
 		t.Errorf("outputs %v", o)
 	}
 }
