@@ -88,6 +88,7 @@ func TestNotifyEncryptChoices(t *testing.T) {
 		"javascript url": {[]string{"--title", "a", "--body", "b", "--url", "javascript:alert(1)"}, "url scheme"},
 		"long title":     {[]string{"--title", strings.Repeat("x", 257), "--body", "b"}, "title is longer"},
 		"typed title":    {[]string{"-F", "title=5", "--body", "b"}, "title must be a string"},
+		"null encrypted": {[]string{"-F", "encrypted=null", "--title", "a", "--body", "b", "--encrypt"}, "pw1 envelope"},
 		"too long":       {[]string{"--title", "a", "--body", strings.Repeat("x", 3000)}, "too long to encrypt"},
 	} {
 		r := runCLI(t, srv, nil, "", append([]string{"notify"}, tc.argv...)...)

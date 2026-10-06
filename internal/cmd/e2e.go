@@ -70,7 +70,10 @@ func messageFrom(b map[string]any) (e2e.Message, error) {
 // it leaves the body alone and returns "", unless required. A body that
 // already carries encrypted was sealed elsewhere and passes through.
 func (a *App) encryptBody(b map[string]any, required bool) (string, error) {
-	if _, ok := b["encrypted"]; ok {
+	if v, ok := b["encrypted"]; ok {
+		if s, _ := v.(string); s == "" {
+			return "", usagef("encrypted must be a pw1 envelope (pushward e2e encrypt prints one)")
+		}
 		return "", nil
 	}
 	k, _, err := a.loadE2EKey()
