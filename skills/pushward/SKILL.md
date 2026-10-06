@@ -123,8 +123,9 @@ pushward receipt cancel --tag nas-1
 one was tapped. `receipt get --wait` exits 7 when the wait runs out, as `notification answer`
 does, and also when the alert expired or was canceled unacknowledged (`--jq .status` tells
 which). When the problem clears on its own, cancel the repeats by id
-(`pushward receipt cancel 42`) or by tag. A key can have 25 alerts repeating at once
-(`notification_receipt.limit_exceeded` beyond that), and a new one with the same
+(`pushward receipt cancel 42`) or by tag; a tag reaches only what the same key sent. An
+account can have 25 alerts repeating at once, an organization's sends counting against the
+organization (`notification_receipt.limit_exceeded` beyond that), and a new one with the same
 `--collapse-id` replaces the old one's repeats. `--callback-url` and `pushward receipt secret`
 are for the user's own webhook receivers.
 

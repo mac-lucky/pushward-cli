@@ -6901,7 +6901,7 @@ paths:
         - Notifications
   /notifications/receipts/cancel:
     post:
-      description: "Cancels the repeats of every active receipt with this tag that the caller can see. Returns how many it canceled."
+      description: "Cancels the repeats of every active receipt with this tag. An integration key cancels only the receipts of notifications it sent; a full API token cancels them across the account. Returns how many it canceled."
       operationId: cancelNotificationReceiptsByTag
       requestBody:
         content:

@@ -144,8 +144,9 @@ func newReceiptCancelCmd(a *App) *cobra.Command {
 		Use:   "cancel [id]",
 		Short: "Stop a notification from repeating",
 		Long: `Stop the repeats of one notification sent with --ack, or of every active
-one sent with --tag. The notifications already delivered stay on the
-devices; a receipt that already finished is left as it is.
+one with the tag. A tag reaches only what the same integration key sent.
+The notifications already delivered stay on the devices; a receipt that
+already finished is left as it is.
 
   pushward receipt cancel 42
   pushward receipt cancel --tag db-1`,
@@ -181,7 +182,7 @@ devices; a receipt that already finished is left as it is.
 			return a.out().Printf(resp.Body, "canceled the repeats of notification %s", argv[0])
 		},
 	}
-	c.Flags().StringVar(&tag, "tag", "", "cancel every active notification sent with this tag")
+	c.Flags().StringVar(&tag, "tag", "", "cancel every active notification this key sent with this tag")
 	return c
 }
 

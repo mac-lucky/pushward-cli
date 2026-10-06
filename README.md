@@ -80,9 +80,9 @@ pushward receipt 42 --wait 10m      # acknowledged, or exit 7 once it expires
 pushward receipt cancel --tag db-1  # db-1 is back: stop repeating
 ```
 
-`notify --ack --wait` blocks until it is acknowledged. `pushward receipt get <id>` (or just `pushward receipt <id>`) shows who acknowledged it and when, and `receipt cancel <id>` stops one. A key can have 25 repeating at once, and a new one with the same `--collapse-id` replaces the old one's repeats.
+`notify --ack --wait` blocks until it is acknowledged. `pushward receipt get <id>` (or just `pushward receipt <id>`) shows who acknowledged it and when, and `receipt cancel <id>` stops one. `receipt cancel --tag` stops only what the same integration key sent. An account can have 25 repeating at once, with an organization's sends counting against the organization, and a new one with the same `--collapse-id` replaces the old one's repeats.
 
-`--callback-url https://...` gets a POST when it is acknowledged or expires, signed like [Standard Webhooks](https://www.standardwebhooks.com/). `pushward receipt secret` prints the `whsec_` secret to check the signature with. It is derived from the integration key, nothing is stored, and rolling the key gives a new one. Account keys (`hla_`) cannot set a callback.
+`--callback-url https://...` gets a POST when it is acknowledged or expires, signed like [Standard Webhooks](https://www.standardwebhooks.com/). `pushward receipt secret` prints the `whsec_` secret to check the signature with. It is derived from the integration key, nothing is stored, and rolling the key gives a new one. The app's own API tokens (`hla_`) cannot set a callback.
 
 ## Live Activities
 
