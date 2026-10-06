@@ -159,6 +159,8 @@ In the GitHub Action, pass the key from a secret as the `e2e-key` input and set 
     json: '@body.json'
 ```
 
+Upgrade note: CLI 1.3.x and earlier keep only the API URL and the integration key when `auth login` or `auth logout` rewrites the config file, so running either with an older binary (another install, an old image) deletes a stored encryption key. `pushward e2e key-id` tells you whether it is still there; `pushward e2e import` it again if not.
+
 ## Request bodies
 
 Every write command takes the same four layers, later ones winning: `--data` (JSON literal, `@file` or `-` for stdin), the command's own flags, `-f key=value` (always a string) and `-F key=value` (typed: numbers, `true`/`false`/`null`, JSON literals, `@file`). Keys are dotted paths; `key[]` appends to an array and `key[2]` sets an index.
