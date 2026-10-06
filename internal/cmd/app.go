@@ -57,6 +57,8 @@ type App struct {
 	Now    func() time.Time
 	Sleep  func(context.Context, time.Duration) error
 	Getenv func(string) string
+	// Rand supplies encryption keys and nonces; nil means crypto/rand.
+	Rand io.Reader
 
 	// Body is the last successful API response, which the GitHub Action
 	// turns into step outputs.
@@ -71,10 +73,14 @@ type App struct {
 	apiURL  string
 	// token, when set, replaces the configured key (the Action's token input).
 	token string
+	// e2eKey, when set, replaces the configured encryption key (the Action's
+	// e2e-key input).
+	e2eKey string
 
 	printer *output.Printer
 	cfg     config.Config
 	client  *api.Client
+	warned  map[string]bool
 }
 
 func NewApp(version, commit, date string) *App {
@@ -168,6 +174,19 @@ func (a *App) out() *output.Printer {
 	return a.printer
 }
 
+// warnOnce prints a warning the first time it comes up: the token and the
+// encryption key can both come from a config file with loose permissions.
+func (a *App) warnOnce(msg string) {
+	if msg == "" || a.warned[msg] {
+		return
+	}
+	if a.warned == nil {
+		a.warned = map[string]bool{}
+	}
+	a.warned[msg] = true
+	a.out().Warnf("%s", msg)
+}
+
 func (a *App) newClient(baseURL, token string) *api.Client {
 	c := &api.Client{
 		BaseURL:   baseURL,
@@ -195,8 +214,8 @@ func (a *App) api() (*api.Client, error) {
 	}
 	if a.token != "" {
 		cfg.Token = a.token
-	} else if cfg.Warning != "" {
-		a.out().Warnf("%s", cfg.Warning)
+	} else {
+		a.warnOnce(cfg.Warning)
 	}
 	a.cfg = cfg
 	a.client = a.newClient(cfg.APIURL, cfg.Token)

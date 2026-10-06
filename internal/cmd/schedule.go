@@ -78,10 +78,10 @@ Takes the same notification flags as notify.
 			}
 			resp, err := a.call(cmd.Context(), "createScheduledNotification", nil, nil, b)
 			if err != nil {
-				return err
+				return in.explain(err)
 			}
 			s := decode(resp.Body)
-			return a.out().Printf(resp.Body, "scheduled notification %s for %s", str(s, "id"), shortTime(str(s, "send_at")))
+			return a.out().Printf(resp.Body, "scheduled notification %s for %s%s", str(s, "id"), shortTime(str(s, "send_at")), in.sent())
 		},
 	}
 	in.register(c)

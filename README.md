@@ -119,6 +119,21 @@ pushward notify --title "db-1 disk at 95%" --body "Paging on-call" --target-grou
 pushward activity update deploy --target-tags wall
 ```
 
+## End-to-end encryption
+
+With an encryption key, `notify`, `notification send` and `schedule create` encrypt the title, subtitle, body and url on your machine (AES-256-GCM, envelope format `pw1`). PushWard stores and forwards only the sealed text, and only devices holding the key can read it. Level, actions, metadata and the other fields the server delivers by stay readable. Devices need PushWard 1.17.0 or later; older builds show a placeholder.
+
+```sh
+pushward e2e generate --save     # prints the key and its Key ID; import the key in the app (Settings, Encryption)
+pbpaste | pushward e2e import    # or store a key created in the app
+pushward e2e key-id              # compare with the Key ID the app shows
+pushward notify --title "Prod DB password rotated" --body "New one is in the vault under db/prod"
+```
+
+The key comes from `PUSHWARD_E2E_KEY`, then the config file. Once one is set, every notification is encrypted: `--no-encrypt` sends one without it, and `--encrypt` fails instead of sending in the clear when no key is set. `pushward api` never encrypts. `pushward e2e encrypt` and `pushward e2e decrypt` seal and open envelopes for other tools, and [internal/e2e/testdata/vectors-v1.json](internal/e2e/testdata/vectors-v1.json) holds the test vectors for anyone writing their own.
+
+The sealed text has to fit a 3072-character envelope, about 2.2 KB, so a long body only goes out unencrypted. Organization keys cannot send encrypted notifications yet.
+
 ## Request bodies
 
 Every write command takes the same four layers, later ones winning: `--data` (JSON literal, `@file` or `-` for stdin), the command's own flags, `-f key=value` (always a string) and `-F key=value` (typed: numbers, `true`/`false`/`null`, JSON literals, `@file`). Keys are dotted paths; `key[]` appends to an array and `key[2]` sets an index.

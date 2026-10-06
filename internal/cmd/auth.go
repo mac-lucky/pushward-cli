@@ -41,7 +41,7 @@ func newAuthLoginCmd(a *App) *cobra.Command {
   op read op://Private/pushward/credential | pushward auth login --with-token`,
 		Args: checkArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			token, err := a.readToken(withToken)
+			token, err := a.readSecret("Paste your integration key: ", withToken)
 			if err != nil {
 				return err
 			}
@@ -82,9 +82,11 @@ func newAuthLoginCmd(a *App) *cobra.Command {
 	return c
 }
 
-func (a *App) readToken(fromStdin bool) (string, error) {
+// readSecret prompts for a secret without echoing it, or reads one line from
+// stdin when fromStdin is set or stdin is not a terminal.
+func (a *App) readSecret(prompt string, fromStdin bool) (string, error) {
 	if !fromStdin && a.StdinTTY {
-		fmt.Fprint(a.Stderr, "Paste your integration key: ")
+		fmt.Fprint(a.Stderr, prompt)
 		f, ok := a.Stdin.(*os.File)
 		if !ok {
 			return "", errors.New("stdin is not a terminal")

@@ -9,8 +9,9 @@ import (
 // Problem codes the client treats specially. The server sends many more;
 // everything else is surfaced verbatim.
 const (
-	CodeQuotaExceeded   = "quota.exceeded"
-	CodeAnswerWaitLimit = "answer_wait.limit_exceeded"
+	CodeQuotaExceeded         = "quota.exceeded"
+	CodeAnswerWaitLimit       = "answer_wait.limit_exceeded"
+	CodeEncryptionUnavailable = "notification.encryption_unavailable"
 )
 
 // Error is a non-2xx response, decoded from the RFC 9457 Problem body the

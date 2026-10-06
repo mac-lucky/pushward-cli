@@ -167,6 +167,26 @@ allow; devices that lose it end it, devices that gain it start it. A key the adm
 to some groups and tags must stay inside them (403 otherwise) and only sees activities sent
 inside them: anything else answers 404. A personal key gets 422 for any target.
 
+## Encrypted notifications
+
+When the user has set up an encryption key (`pushward e2e key-id` exits 0), `notify` and
+`schedule create` encrypt the title, subtitle, body and url before sending, with no change to
+how you call them. Only their devices holding the key can read that text. Level, actions,
+metadata, thread, source and target stay readable to the server and to Apple, so never put a
+secret in those. Encrypted text has room for about 2,200 bytes in total, much less than the
+4096 a plain body can take.
+
+```sh
+pushward e2e key-id
+pushward notify --title "Prod DB password rotated" --body "New one is in the vault under db/prod" --encrypt
+```
+
+`--encrypt` makes the send fail when no key is set rather than go out readable; use it when the
+user asked for encryption. `--no-encrypt` sends one in the clear, for example with an
+organization key, which cannot send encrypted (`notification.encryption_unavailable`). Leave
+`pushward e2e generate` and `pushward e2e import` to the user: they print or take the key
+itself. `pushward api` never encrypts. Needs CLI 1.4.0.
+
 ## Reading output
 
 Piped, every command prints the API response as JSON; on a terminal it prints a summary. Some

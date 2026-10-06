@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mac-lucky/pushward-cli/internal/api"
 	"github.com/mac-lucky/pushward-cli/internal/body"
 )
 
@@ -24,6 +25,10 @@ type notificationInput struct {
 	actions   []string
 	meta      []string
 	noPush    bool
+	encrypt   bool
+	noEncrypt bool
+	// kid is the key ID build encrypted with, "" when it did not.
+	kid string
 }
 
 func (n *notificationInput) register(c *cobra.Command) {
@@ -35,6 +40,8 @@ func (n *notificationInput) register(c *cobra.Command) {
 	c.Flags().StringArrayVar(&n.actions, "action", nil, "answer button as id=Title (repeatable); makes the notification answerable")
 	c.Flags().StringArrayVar(&n.meta, "meta", nil, "metadata key=value (repeatable)")
 	c.Flags().BoolVar(&n.noPush, "no-push", false, "store in the inbox without pushing to devices")
+	c.Flags().BoolVar(&n.encrypt, "encrypt", false, "encrypt title, subtitle, body and url, failing when no encryption key is set (the default whenever one is)")
+	c.Flags().BoolVar(&n.noEncrypt, "no-encrypt", false, "send this one unencrypted even though an encryption key is set")
 	n.bf.register(c)
 }
 
@@ -82,7 +89,38 @@ func (n *notificationInput) build(a *App, cmd *cobra.Command) (map[string]any, e
 	if n.noPush {
 		conv["push"] = false
 	}
-	return n.bf.build(a, conv)
+	b, err := n.bf.build(a, conv)
+	if err != nil {
+		return nil, err
+	}
+	// Encrypt last, so text from --data, -f and -F is sealed too.
+	switch {
+	case n.encrypt && n.noEncrypt:
+		return nil, usagef("--encrypt and --no-encrypt are mutually exclusive")
+	case !n.noEncrypt:
+		if n.kid, err = a.encryptBody(b, n.encrypt); err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
+}
+
+// sent describes how the notification went out, for the summary line.
+func (n *notificationInput) sent() string {
+	if n.kid == "" {
+		return ""
+	}
+	return " (encrypted, key ID " + n.kid + ")"
+}
+
+// explain adds the way out to an error a configured key caused: the server
+// refuses encrypted notifications from organization keys.
+func (n *notificationInput) explain(err error) error {
+	var ae *api.Error
+	if n.kid != "" && !n.encrypt && errors.As(err, &ae) && ae.Code == api.CodeEncryptionUnavailable {
+		return fmt.Errorf("%w\n  an encryption key is set; pass --no-encrypt to send this one unencrypted", err)
+	}
+	return err
 }
 
 func newNotifyCmd(a *App) *cobra.Command {
@@ -118,7 +156,7 @@ tapped, then prints the answer (exit 7 if nobody answers in time):
 			ctx := cmd.Context()
 			resp, err := a.call(ctx, "createNotification", nil, nil, b)
 			if err != nil {
-				return err
+				return in.explain(err)
 			}
 			n := decode(resp.Body)
 			id := str(n, "id")
@@ -126,14 +164,14 @@ tapped, then prints the answer (exit 7 if nobody answers in time):
 				a.out().Warnf("delivery %s (%s)", d, cmp.Or(str(n, "reason"), "no reason given"))
 			}
 			if wait <= 0 {
-				return a.out().Printf(resp.Body, "sent notification %s", id)
+				return a.out().Printf(resp.Body, "sent notification %s%s", id, in.sent())
 			}
 			// Actions that all carry a url are dispatched by the device and
 			// never reach the server as answers.
 			if str(n, "answerable") != "true" {
 				return usagef("notification %s cannot be answered: --wait needs at least one --action without a url", id)
 			}
-			a.out().Human("sent notification %s, waiting for an answer", id)
+			a.out().Human("sent notification %s%s, waiting for an answer", id, in.sent())
 			return a.waitAnswer(ctx, id, wait)
 		},
 	}
