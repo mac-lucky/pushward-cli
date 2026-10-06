@@ -59,10 +59,13 @@ func TestSpecParity(t *testing.T) {
 		}
 	}
 
+	// A command that picks between operations lists them comma-separated.
 	covered := map[string]string{}
 	walk(NewRoot(NewApp("test", "", "")), func(c *cobra.Command) {
-		if id := c.Annotations["operation"]; id != "" {
-			covered[id] = c.CommandPath()
+		if ids := c.Annotations["operation"]; ids != "" {
+			for id := range strings.SplitSeq(ids, ",") {
+				covered[id] = c.CommandPath()
+			}
 		}
 	})
 	known := map[string]bool{}

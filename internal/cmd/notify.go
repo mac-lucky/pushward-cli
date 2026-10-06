@@ -25,6 +25,8 @@ type notificationInput struct {
 	actions   []string
 	meta      []string
 	noPush    bool
+	ack       bool
+	tags      []string
 	encrypt   bool
 	noEncrypt bool
 	// kid is the key ID build encrypted with, "" when it did not.
@@ -40,6 +42,8 @@ func (n *notificationInput) register(c *cobra.Command) {
 	c.Flags().StringArrayVar(&n.actions, "action", nil, "answer button as id=Title (repeatable); makes the notification answerable")
 	c.Flags().StringArrayVar(&n.meta, "meta", nil, "metadata key=value (repeatable)")
 	c.Flags().BoolVar(&n.noPush, "no-push", false, "store in the inbox without pushing to devices")
+	c.Flags().BoolVar(&n.ack, "ack", false, "repeat the notification until someone acknowledges it on a device or it expires")
+	c.Flags().StringArrayVar(&n.tags, "tag", nil, "with --ack: tag to cancel it by (repeatable)")
 	c.Flags().BoolVar(&n.encrypt, "encrypt", false, "encrypt title, subtitle, body and url, failing when no encryption key is set (the default whenever one is)")
 	c.Flags().BoolVar(&n.noEncrypt, "no-encrypt", false, "send this one unencrypted even though an encryption key is set")
 	n.bf.register(c)
@@ -89,9 +93,22 @@ func (n *notificationInput) build(a *App, cmd *cobra.Command) (map[string]any, e
 	if n.noPush {
 		conv["push"] = false
 	}
+	if _, ok := conv["acknowledge"]; n.ack && !ok {
+		conv["acknowledge"] = map[string]any{}
+	}
+	if len(n.tags) > 0 {
+		tags := make([]any, len(n.tags))
+		for i, t := range n.tags {
+			tags[i] = t
+		}
+		conv["tags"] = tags
+	}
 	b, err := n.bf.build(a, conv)
 	if err != nil {
 		return nil, err
+	}
+	if b["acknowledge"] == nil && (len(n.tags) > 0 || cmd.Flags().Changed("callback-url")) {
+		return nil, usagef("--tag and --callback-url only apply with --ack")
 	}
 	// Encrypt last, so text from --data, -f and -F is sealed too.
 	switch {
@@ -111,6 +128,15 @@ func (n *notificationInput) sent() string {
 		return ""
 	}
 	return " (encrypted, key ID " + n.kid + ")"
+}
+
+// repeats describes the receipt of a notification sent with --ack, for the
+// summary line.
+func repeats(n map[string]any) string {
+	if _, ok := n["receipt"].(map[string]any); !ok {
+		return ""
+	}
+	return fmt.Sprintf(", repeating every %ss until acknowledged or %s", str(n, "receipt", "repeat_seconds"), shortTime(str(n, "receipt", "expires_at")))
 }
 
 // explain adds the way out to an error a configured key caused: the server
@@ -142,7 +168,14 @@ With --action the notification gets buttons, and --wait blocks until one is
 tapped, then prints the answer (exit 7 if nobody answers in time):
 
   pushward notify --title "Deploy to prod?" --body "v2.4.0" \
-    --action deploy=Deploy --action skip=Skip --wait 15m --jq .action_id`,
+    --action deploy=Deploy --action skip=Skip --wait 15m --jq .action_id
+
+With --ack it repeats until someone acknowledges it on a device or it
+expires; --wait then blocks until it is acknowledged (exit 7 otherwise), and
+pushward receipt follows or cancels it later:
+
+  pushward notify --title "db-1 down" --body "Primary unreachable" \
+    --level critical --ack --ack-repeat 2m --tag db-1`,
 		Args:        checkArgs,
 		Annotations: map[string]string{"operation": "createNotification"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -150,8 +183,8 @@ tapped, then prints the answer (exit 7 if nobody answers in time):
 			if err != nil {
 				return err
 			}
-			if wait > 0 && b["actions"] == nil {
-				return usagef("--wait needs an --action to answer with")
+			if wait > 0 && b["actions"] == nil && b["acknowledge"] == nil {
+				return usagef("--wait needs an --action to answer with, or --ack")
 			}
 			ctx := cmd.Context()
 			resp, err := a.call(ctx, "createNotification", nil, nil, b)
@@ -164,7 +197,13 @@ tapped, then prints the answer (exit 7 if nobody answers in time):
 				a.out().Warnf("delivery %s (%s)", d, cmp.Or(str(n, "reason"), "no reason given"))
 			}
 			if wait <= 0 {
-				return a.out().Printf(resp.Body, "sent notification %s%s", id, in.sent())
+				return a.out().Printf(resp.Body, "sent notification %s%s%s", id, in.sent(), repeats(n))
+			}
+			// Any answer acknowledges, and the receipt also ends when the
+			// notification expires or is canceled, so wait on that.
+			if _, ok := n["receipt"].(map[string]any); ok {
+				a.out().Human("sent notification %s%s%s, waiting for an acknowledgement", id, in.sent(), repeats(n))
+				return a.waitReceipt(ctx, cmp.Or(str(n, "receipt", "notification_id"), id), wait)
 			}
 			// Actions that all carry a url are dispatched by the device and
 			// never reach the server as answers.

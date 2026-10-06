@@ -276,7 +276,16 @@ var targetFields = []field{
 	{"target-members", "target.members", kNames, "organization keys: comma-separated user ids of the members that get it"},
 }
 
-var notificationFields = slices.Concat(notificationBaseFields, targetFields)
+var notificationFields = slices.Concat(notificationBaseFields, ackFields, targetFields)
+
+// ackFields tune a notification that repeats until acknowledged. Setting any
+// acknowledge.* path asks for the acknowledgement, the same as --ack.
+var ackFields = []field{
+	{"ack-repeat", "acknowledge.repeat_seconds", kSeconds, "repeat until acknowledged, this often: 30s to 1h (default 1m); implies --ack"},
+	{"ack-expire", "acknowledge.expire_seconds", kSeconds, "stop repeating after this long: 1m to 3h (default 1h); implies --ack"},
+	{"ack-title", "acknowledge.action_title", kString, "title of the acknowledge button (default Acknowledge); implies --ack"},
+	{"callback-url", "callback_url", kString, "with --ack: https URL that gets a signed POST when it is acknowledged or expires"},
+}
 
 var notificationBaseFields = []field{
 	{"title", "title", kString, "title (required)"},
