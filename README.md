@@ -144,9 +144,20 @@ pushward e2e key-id              # compare with the Key ID the app shows
 pushward notify --title "Prod DB password rotated" --body "New one is in the vault under db/prod"
 ```
 
-The key comes from `PUSHWARD_E2E_KEY`, then the config file; in the GitHub Action, pass it from a secret as the `e2e-key` input. Once one is set, every notification is encrypted: `--no-encrypt` sends one without it, and `--encrypt` fails instead of sending in the clear when no key is set. `pushward api` never encrypts. `pushward e2e encrypt` and `pushward e2e decrypt` seal and open envelopes for other tools, and [internal/e2e/testdata/vectors-v1.json](internal/e2e/testdata/vectors-v1.json) holds the test vectors for anyone writing their own.
+The key comes from `PUSHWARD_E2E_KEY`, then the config file. Once one is set, every notification is encrypted: `--no-encrypt` sends one without it, and `--encrypt` fails instead of sending in the clear when no key is set. `pushward api` never encrypts. `pushward e2e encrypt` and `pushward e2e decrypt` seal and open envelopes for other tools, and [internal/e2e/testdata/vectors-v1.json](internal/e2e/testdata/vectors-v1.json) holds the test vectors for anyone writing their own.
 
 The sealed text has to fit a 3072-character envelope, about 2.2 KB. A longer body is refused before anything is sent; shorten it, or send it with `--no-encrypt`. Organization keys cannot send encrypted notifications yet.
+
+In the GitHub Action, pass the key from a secret as the `e2e-key` input and set `encrypt: true` next to it. A secret that does not exist, or is not passed to a pull request from a fork, comes through empty, and without `encrypt` the step would then send the text readable. GitHub also prints a step's inputs at the top of its log, so the `title` and `body` inputs are readable there even though the request is encrypted. For text that must stay private, write it to a file in an earlier step and pass `json: '@body.json'`.
+
+```yaml
+- uses: mac-lucky/pushward-action@v1
+  with:
+    token: ${{ secrets.PUSHWARD_TOKEN }}
+    e2e-key: ${{ secrets.PUSHWARD_E2E_KEY }}
+    encrypt: true
+    json: '@body.json'
+```
 
 ## Request bodies
 

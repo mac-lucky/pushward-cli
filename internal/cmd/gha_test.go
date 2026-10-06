@@ -127,6 +127,7 @@ func TestGHAGuards(t *testing.T) {
 		"no token":         {map[string]string{"command": "notify"}, "token input is required"},
 		"auth refused":     {map[string]string{"token": "hlk", "command": "auth login"}, "not available"},
 		"e2e refused":      {map[string]string{"token": "hlk", "command": "e2e generate"}, "not available"},
+		"encrypt, no key":  {map[string]string{"token": "hlk", "title": "a", "body": "b", "encrypt": "true"}, "no encryption key"},
 		"flag before e2e":  {map[string]string{"token": "hlk", "command": "--json e2e decrypt pw1.x"}, "not available"},
 		"short flag e2e":   {map[string]string{"token": "hlk", "command": "-q e2e generate"}, "not available"},
 		"jq before auth":   {map[string]string{"token": "hlk", "command": "--jq .x auth status"}, "not available"},

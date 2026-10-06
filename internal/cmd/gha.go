@@ -39,6 +39,7 @@ var inputFlags = []struct {
 	{"status", []string{"status"}, false},
 	{"wait", []string{"wait", "timeout"}, false},
 	{"actions", []string{"action", "option"}, true},
+	{"encrypt", []string{"encrypt"}, false},
 	{"ack", []string{"ack"}, false},
 	{"ack-repeat", []string{"ack-repeat"}, false},
 	{"ack-expire", []string{"ack-expire"}, false},
@@ -130,7 +131,7 @@ func (a *App) runGHA() error {
 		return a.ghaFail(err, failOnError)
 	}
 	shown := argv
-	if e2eKey != "" || strings.TrimSpace(a.Getenv(config.EnvE2EKey)) != "" {
+	if e2eKey != "" || in("encrypt") == "true" || strings.TrimSpace(a.Getenv(config.EnvE2EKey)) != "" {
 		shown = redactSealed(argv)
 	}
 	fmt.Fprintf(a.Stdout, "::debug::pushward %s\n", gha.EscapeData(strings.Join(shown, " ")))

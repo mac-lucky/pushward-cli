@@ -72,8 +72,16 @@ inputs:
   e2e-key:
     description: >-
       End-to-end encryption key (64 hex characters) from the PushWard app.
-      Pass it from a secret. notify and schedule create then encrypt the
-      title, subtitle, body and url; devices without the key show a placeholder.
+      Pass it from a secret, and set encrypt to true: a secret that is missing
+      or empty in this run would otherwise send the text readable. notify and
+      schedule create encrypt the title, subtitle, body and url; devices
+      without the key show a placeholder. GitHub prints the step's inputs at
+      the top of its log, so pass text that must stay private in a file
+      written by an earlier step, with json: '@body.json'.
+  encrypt:
+    description: >-
+      Set to true to fail the step instead of sending readable text when no
+      encryption key is set.
   fields:
     description: >-
       Extra typed fields, one key=value per line, with dotted keys
