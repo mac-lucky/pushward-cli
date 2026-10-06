@@ -236,3 +236,27 @@ func TestGHAAck(t *testing.T) {
 		t.Errorf("outputs %v", o)
 	}
 }
+
+func TestGHAPresealed(t *testing.T) {
+	f, srv := newFake(t)
+	t.Setenv("PUSHWARD_E2E_KEY", "")
+	f.reply("POST /notifications", 201, `{"id":5,"delivery":"all"}`)
+	env := vectorEnvelope(t)
+	for name, inputs := range map[string]map[string]string{
+		"fields":  {"fields": "encrypted=" + env},
+		"json":    {"json": `{"encrypted":"` + env + `"}`},
+		"command": {"command": "notify -f encrypted=" + env},
+	} {
+		inputs["token"] = "hlk_action"
+		genv, _ := ghaEnv(t, inputs)
+		f.calls = nil
+		r := runCLI(t, srv, genv, "", "gha")
+		if r.code != 0 || len(f.calls) != 1 {
+			t.Fatalf("%s: exit %d\n%s", name, r.code, r.stdout)
+		}
+		want := `{"encrypted":"` + env + `","source":"github-actions","thread_id":"mac-lucky/demo"}`
+		if got := mustJSON(t, f.calls[0].Body); got != want {
+			t.Errorf("%s: body\n got  %s\n want %s", name, got, want)
+		}
+	}
+}

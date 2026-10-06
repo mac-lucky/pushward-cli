@@ -32,6 +32,24 @@ func openSent(t *testing.T, key string, body map[string]any) e2e.Message {
 	return m
 }
 
+// vectorEnvelope is the first sealed envelope of the shared vectors.
+func vectorEnvelope(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile("../e2e/testdata/vectors-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Seal []struct {
+			Envelope string `json:"envelope"`
+		} `json:"seal"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil || len(v.Seal) == 0 {
+		t.Fatalf("vectors: %v", err)
+	}
+	return v.Seal[0].Envelope
+}
+
 func TestNotifyEncrypts(t *testing.T) {
 	f, srv := newFake(t)
 	t.Setenv("PUSHWARD_E2E_KEY", strings.ToUpper(testE2EKey))
@@ -73,8 +91,9 @@ func TestNotifyEncryptChoices(t *testing.T) {
 		t.Errorf("--no-encrypt: exit %d body %v", r.code, f.calls[0].Body)
 	}
 	// Sealed elsewhere: passed through untouched.
-	r = runCLI(t, srv, nil, "", "notify", "-f", "encrypted=pw1.sealed-elsewhere", "--level", "passive")
-	if r.code != 0 || mustJSON(t, f.calls[1].Body) != `{"encrypted":"pw1.sealed-elsewhere","level":"passive"}` {
+	env := vectorEnvelope(t)
+	r = runCLI(t, srv, nil, "", "notify", "-f", "encrypted="+env, "--level", "passive")
+	if r.code != 0 || mustJSON(t, f.calls[1].Body) != `{"encrypted":"`+env+`","level":"passive"}` {
 		t.Errorf("existing encrypted: exit %d body %v", r.code, f.calls[1].Body)
 	}
 
@@ -89,6 +108,9 @@ func TestNotifyEncryptChoices(t *testing.T) {
 		"long title":     {[]string{"--title", strings.Repeat("x", 257), "--body", "b"}, "title is longer"},
 		"typed title":    {[]string{"-F", "title=5", "--body", "b"}, "title must be a string"},
 		"null encrypted": {[]string{"-F", "encrypted=null", "--title", "a", "--body", "b", "--encrypt"}, "pw1 envelope"},
+		"bad envelope":   {[]string{"-f", "encrypted=pw1.sealed-elsewhere"}, "pw1 envelope"},
+		"sealed + title": {[]string{"-f", "encrypted=" + env, "--title", "readable"}, "title is set next to encrypted"},
+		"sealed + url":   {[]string{"--data", `{"encrypted":"` + env + `","url":"https://x.example"}`}, "url is set next to encrypted"},
 		"too long":       {[]string{"--title", "a", "--body", strings.Repeat("x", 3000)}, "too long to encrypt"},
 	} {
 		r := runCLI(t, srv, nil, "", append([]string{"notify"}, tc.argv...)...)

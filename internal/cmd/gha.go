@@ -10,6 +10,7 @@ import (
 	"github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
 
+	"github.com/mac-lucky/pushward-cli/internal/body"
 	"github.com/mac-lucky/pushward-cli/internal/callback"
 	"github.com/mac-lucky/pushward-cli/internal/config"
 	"github.com/mac-lucky/pushward-cli/internal/e2e"
@@ -259,7 +260,9 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 		// The start step may never have run, e.g. when an earlier step failed.
 		def("ignore-missing", "true")
 	case target.Annotations["operation"] == "createNotification":
-		def("url", runURL)
+		if !presealed(target) {
+			def("url", runURL)
+		}
 		def("thread", repo)
 		def("source", "github-actions")
 	}
@@ -284,6 +287,26 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 		return nil, "", usagef("%s needs an id: put it in command, like %q", target.CommandPath(), strings.TrimPrefix(target.CommandPath(), "pushward ")+" 123")
 	}
 	return argv, slug, nil
+}
+
+// presealed reports whether the body already carries an envelope sealed
+// before the Action ran. The run URL then stays out: next to encrypted it
+// would go out readable, and the CLI refuses that.
+func presealed(c *cobra.Command) bool {
+	for _, name := range []string{"field", "raw-field"} {
+		vals, _ := c.Flags().GetStringArray(name)
+		for _, v := range vals {
+			if strings.HasPrefix(v, "encrypted=") {
+				return true
+			}
+		}
+	}
+	d, _ := c.Flags().GetString("data")
+	if d == "" || d == "-" || d == "@-" {
+		return false
+	}
+	obj, err := body.ParseJSON(d, nil)
+	return err == nil && obj["encrypted"] != nil
 }
 
 // ghaOutputs derives the step outputs from the last response, so no command

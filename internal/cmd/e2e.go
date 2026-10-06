@@ -68,11 +68,18 @@ func messageFrom(b map[string]any) (e2e.Message, error) {
 // encryptBody replaces the text fields of a notification body with their
 // envelope in encrypted, and returns the key ID it sealed with. Without a key
 // it leaves the body alone and returns "", unless required. A body that
-// already carries encrypted was sealed elsewhere and passes through.
+// already carries encrypted was sealed elsewhere and passes through, as long
+// as no text field would go out readable next to it.
 func (a *App) encryptBody(b map[string]any, required bool) (string, error) {
 	if v, ok := b["encrypted"]; ok {
-		if s, _ := v.(string); s == "" {
-			return "", usagef("encrypted must be a pw1 envelope (pushward e2e encrypt prints one)")
+		s, _ := v.(string)
+		if _, _, err := e2e.ParseEnvelope(s); err != nil {
+			return "", usagef("encrypted must be a pw1 envelope (pushward e2e encrypt prints one): %v", err)
+		}
+		for _, f := range sealedFields {
+			if v := b[f]; v != nil && v != "" {
+				return "", usagef("%s is set next to encrypted and would be sent readable; put it inside the envelope", f)
+			}
 		}
 		return "", nil
 	}
