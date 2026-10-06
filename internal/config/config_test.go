@@ -89,3 +89,27 @@ func TestValidateURL(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadE2E(t *testing.T) {
+	t.Setenv(EnvConfig, t.TempDir())
+	t.Setenv(EnvE2EKey, "")
+	if c, err := LoadE2E(); err != nil || c != (E2E{}) {
+		t.Errorf("none: %+v %v", c, err)
+	}
+	p, err := Write(File{Token: "hlk_file", E2EKey: "abcd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := LoadE2E(); c.Key != "abcd" || c.Source != p || c.Warning != "" {
+		t.Errorf("file: %+v", c)
+	}
+	t.Setenv(EnvE2EKey, " ef01\n")
+	if c, _ := LoadE2E(); c.Key != "ef01" || c.Source != "env" {
+		t.Errorf("env: %+v", c)
+	}
+	// A broken API URL does not stop the offline e2e commands.
+	t.Setenv(EnvURL, "http://example.com")
+	if _, err := LoadE2E(); err != nil {
+		t.Errorf("api url checked: %v", err)
+	}
+}

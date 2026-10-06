@@ -1,5 +1,6 @@
-// Package config resolves the API URL and integration key: environment
-// first, then the file written by `pushward auth login`.
+// Package config resolves the API URL, the integration key and the
+// end-to-end encryption key: environment first, then the file written by
+// `pushward auth login` and `pushward e2e`.
 package config
 
 import (
@@ -19,16 +20,20 @@ import (
 
 const (
 	EnvToken  = "PUSHWARD_API_TOKEN" // #nosec G101 -- the variable name, not a credential
+	EnvE2EKey = "PUSHWARD_E2E_KEY"
 	EnvURL    = "PUSHWARD_API_URL"
 	EnvConfig = "PUSHWARD_CONFIG_DIR"
 	fileName  = "config.json"
 )
 
-// File is the on-disk config. The token sits in a 0600 file in a 0700
-// directory, the same trust level as ~/.netrc or gh's hosts.yml.
+// File is the on-disk config. The token and the encryption key sit in a 0600
+// file in a 0700 directory, the same trust level as ~/.netrc or gh's
+// hosts.yml. Commands that change one field read the file and write it back
+// whole, so login and logout keep the encryption key and the other way round.
 type File struct {
 	APIURL string `json:"api_url,omitempty"`
 	Token  string `json:"token,omitempty"`
+	E2EKey string `json:"e2e_key,omitempty"`
 }
 
 type Config struct {
@@ -146,9 +151,7 @@ func Load(apiURL string) (Config, error) {
 		c.Token, c.TokenSource = strings.TrimSpace(os.Getenv(EnvToken)), "env"
 	case f.Token != "":
 		c.Token, c.TokenSource = f.Token, p
-		if info, err := os.Stat(p); err == nil && runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-			c.Warning = fmt.Sprintf("%s is readable by other users; run chmod 600 on it", p)
-		}
+		c.Warning = openWarning(p)
 	}
 	u, err := ValidateURL(c.APIURL)
 	if err != nil {
@@ -156,6 +159,36 @@ func Load(apiURL string) (Config, error) {
 	}
 	c.APIURL = u
 	return c, nil
+}
+
+// openWarning complains about a config file other users can read.
+func openWarning(p string) string {
+	if info, err := os.Stat(p); err == nil && runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
+		return fmt.Sprintf("%s is readable by other users; run chmod 600 on it", p)
+	}
+	return ""
+}
+
+// E2E is the resolved end-to-end encryption key, still unparsed.
+type E2E struct {
+	Key string
+	// Source is "env", the config file path, or "" when there is no key.
+	Source  string
+	Warning string
+}
+
+// LoadE2E resolves the encryption key: $PUSHWARD_E2E_KEY, then the config
+// file. It is separate from Load because the e2e commands work offline and
+// must not fail on an API URL they never use.
+func LoadE2E() (E2E, error) {
+	if v := strings.TrimSpace(os.Getenv(EnvE2EKey)); v != "" {
+		return E2E{Key: v, Source: "env"}, nil
+	}
+	f, p, err := Read()
+	if err != nil || f.E2EKey == "" {
+		return E2E{}, err
+	}
+	return E2E{Key: f.E2EKey, Source: p, Warning: openWarning(p)}, nil
 }
 
 // ValidateURL requires https, except for loopback hosts during local
