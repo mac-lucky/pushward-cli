@@ -49,6 +49,13 @@ var inputFlags = []struct {
 	{"json", []string{"data"}, false},
 }
 
+// refusedInAction are the commands the Action will not run: auth writes a
+// config file, and e2e prints keys and decrypted text, which do not belong in
+// a job log.
+var refusedInAction = map[string]bool{
+	"auth": true, "completion": true, "e2e": true, "gha": true, "help": true, "version": true,
+}
+
 // sealedFlags carry text an encryption key seals: the notification fields
 // and the generic body inputs that can set them. The debug line hides their
 // values when the run encrypts.
@@ -181,9 +188,9 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 	if len(words) == 0 {
 		return nil, "", usagef("command input is empty")
 	}
-	// e2e prints keys and decrypted text, which do not belong in a job log.
-	switch words[0] {
-	case "auth", "completion", "e2e", "gha", "help", "version":
+	// help and completion only join the tree when it runs, so they are
+	// checked by name before it is resolved.
+	if refusedInAction[words[0]] {
 		return nil, "", usagef("command %q is not available in the Action", words[0])
 	}
 
@@ -193,6 +200,15 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 	target, _, err := probe.Find(words)
 	if err != nil || target == probe || target.HasSubCommands() {
 		return nil, "", usagef("command input: unknown command %q", command)
+	}
+	// Flags may come before the command (-q e2e generate), so check the
+	// top-level command it resolved to, not the first word.
+	top := target
+	for top.Parent() != probe {
+		top = top.Parent()
+	}
+	if refusedInAction[top.Name()] {
+		return nil, "", usagef("command %q is not available in the Action", top.Name())
 	}
 
 	argv = slices.Clone(words)
