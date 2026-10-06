@@ -149,6 +149,10 @@ func TestReceiptSecret(t *testing.T) {
 	if r.code != 0 || strings.TrimSpace(r.stdout) != want {
 		t.Errorf("--key: exit %d %q %q", r.code, r.stdout, r.stderr)
 	}
+	r = runCLI(t, srv, nil, key+"\n", "receipt", "secret", "--key", "-", "--jq", ".secret")
+	if r.code != 0 || strings.TrimSpace(r.stdout) != want {
+		t.Errorf("--key -: exit %d %q %q", r.code, r.stdout, r.stderr)
+	}
 	if r := runCLI(t, srv, nil, "", "receipt", "secret"); r.code != ExitAuth {
 		t.Errorf("no key: exit %d", r.code)
 	}

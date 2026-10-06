@@ -202,9 +202,19 @@ func newReceiptSecretCmd(a *App) *cobra.Command {
 Standard Webhooks format (webhook-id, webhook-timestamp and
 webhook-signature headers). It is derived here, with no request, from the
 integration key that sends the notification: the configured one, or --key.
-Rolling the key changes it.`,
+Rolling the key changes it. --key - reads the key from stdin, or prompts for
+it on a terminal, which keeps it out of shell history.
+
+  op read op://Private/pushward-alerts/credential | pushward receipt secret --key -`,
 		Args: checkArgs,
 		RunE: func(*cobra.Command, []string) error {
+			if key == "-" {
+				k, err := a.readSecret("Paste your integration key: ", false)
+				if err != nil {
+					return err
+				}
+				key = k
+			}
 			if key == "" {
 				c, err := a.keyed()
 				if err != nil {
@@ -224,6 +234,6 @@ Rolling the key changes it.`,
 			return a.out().Printf(data, "%s", secret)
 		},
 	}
-	c.Flags().StringVar(&key, "key", "", "integration key (hlk_...) to derive it from instead of the configured one")
+	c.Flags().StringVar(&key, "key", "", "integration key (hlk_...) to derive it from instead of the configured one, or - for stdin")
 	return c
 }
