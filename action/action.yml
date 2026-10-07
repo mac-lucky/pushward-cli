@@ -73,12 +73,12 @@ inputs:
     description: >-
       End-to-end encryption key (64 hex characters) from the PushWard app.
       Pass it from a secret, and set encrypt to true: a secret that is missing
-      or empty in this run would otherwise send the text readable. notify and
-      schedule create encrypt the title, subtitle, body and url; devices
-      without the key show a placeholder. GitHub prints the step's inputs at
-      the top of its log, so pass text that must stay private in a file
-      written by an earlier step, with json: '@body.json'. With a key set,
-      api fails on a /notifications path, since it would send that text
+      or empty in this run would otherwise send the text readable. notify,
+      notification send and schedule create encrypt the title, subtitle, body
+      and url; devices without the key show a placeholder. GitHub prints the
+      step's inputs at the top of its log, so pass text that must stay private
+      in a file written by an earlier step, with json: '@body.json'. With a key
+      set, api fails on a /notifications path, since it would send that text
       readable.
   encrypt:
     description: >-

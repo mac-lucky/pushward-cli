@@ -125,9 +125,9 @@ does, and also when the alert expired or was canceled unacknowledged (`--jq .sta
 which). When the problem clears on its own, cancel the repeats by id
 (`pushward receipt cancel 42`) or by tag; a tag reaches only what the same key sent. An
 account can have 25 alerts repeating at once, an organization's sends counting against the
-organization (`notification_receipt.limit_exceeded` beyond that), and a new one with the same
-`--collapse-id` replaces the old one's repeats. `--callback-url` and `pushward receipt secret`
-are for the user's own webhook receivers.
+organization (`notification_receipt.limit_exceeded` beyond that), and a new one sent with the
+same key and `--collapse-id` replaces the old one's repeats. `--callback-url` and
+`pushward receipt secret` are for the user's own webhook receivers.
 
 ## Progress on the Lock Screen
 

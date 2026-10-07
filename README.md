@@ -80,7 +80,7 @@ pushward receipt 42 --wait 10m      # acknowledged, or exit 7 once it expires
 pushward receipt cancel --tag db-1  # db-1 is back: stop repeating
 ```
 
-`notify --ack --wait` blocks until it is acknowledged. `pushward receipt get <id>` (or just `pushward receipt <id>`) shows who acknowledged it and when, and `receipt cancel <id>` stops one. `receipt cancel --tag` stops only what the same integration key sent. An account can have 25 repeating at once, with an organization's sends counting against the organization, and a new one with the same `--collapse-id` replaces the old one's repeats.
+`notify --ack --wait` blocks until it is acknowledged. `pushward receipt get <id>` (or just `pushward receipt <id>`) shows who acknowledged it and when, and `receipt cancel <id>` stops one. `receipt cancel --tag` stops only what the same integration key sent. An account can have 25 repeating at once, with an organization's sends counting against the organization, and a new one sent with the same key and `--collapse-id` replaces the old one's repeats.
 
 `--callback-url https://...` gets a POST when it is acknowledged or expires, signed like [Standard Webhooks](https://www.standardwebhooks.com/). `pushward receipt secret` prints the `whsec_` secret to check the signature with. It is derived from the integration key, nothing is stored, and rolling the key gives a new one. The app's own API tokens (`hla_`) cannot set a callback.
 
@@ -135,7 +135,7 @@ pushward activity update deploy --target-tags wall
 
 ## End-to-end encryption
 
-With an encryption key, `notify`, `notification send` and `schedule create` encrypt the title, subtitle, body and url on your machine (AES-256-GCM, envelope format `pw1`). PushWard stores and forwards only the sealed text, and only devices holding the key can read it. Level, actions, metadata and the other fields the server delivers by stay readable. Devices need PushWard 1.17.0 or later; older builds show a placeholder.
+With an encryption key, `notify`, `notification send` and `schedule create` encrypt the title, subtitle, body and url on your machine (AES-256-GCM, envelope format `pw1`). PushWard stores and forwards only the sealed text, and only devices holding the key can read it. Level, actions, metadata and the rest of what the server needs to deliver it stay readable. Devices need PushWard 1.17.0 or later; older builds show a placeholder.
 
 ```sh
 pushward e2e generate --save     # prints the key and its Key ID; import the key in the app (Settings > End-to-End Encryption)
