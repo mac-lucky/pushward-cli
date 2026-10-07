@@ -2773,7 +2773,7 @@ components:
       properties:
         acknowledge:
           $ref: "#/components/schemas/NotificationAcknowledge"
-          description: "Repeat the notification until someone acknowledges it: any tap on an action without a url counts, and when there is none the server adds an Acknowledge button (id pw_ack). Track it with GET /notifications/receipts/{id} (the response's receipt). Not with push false or level passive. At most 25 active per account."
+          description: "Repeat the notification until someone acknowledges it: any tap on an action without a url that does not open the app (foreground false) counts, and when there is none the server adds an Acknowledge button (id pw_ack). Track it with GET /notifications/receipts/{id} (the response's receipt). Not with push false or level passive. At most 25 active per account."
         actions:
           description: Server-driven action buttons. Max 10 (Apple cap).
           items:
@@ -2870,7 +2870,7 @@ components:
       properties:
         acknowledge:
           $ref: "#/components/schemas/NotificationAcknowledge"
-          description: "Repeat the notification until someone acknowledges it: any tap on an action without a url counts, and when there is none the server adds an Acknowledge button (id pw_ack). Track it with GET /notifications/receipts/{id} (the response's receipt). Not with push false or level passive. At most 25 active per account."
+          description: "Repeat the notification until someone acknowledges it: any tap on an action without a url that does not open the app (foreground false) counts, and when there is none the server adds an Acknowledge button (id pw_ack). Track it with GET /notifications/receipts/{id} (the response's receipt). Not with push false or level passive. At most 25 active per account."
         actions:
           description: Server-driven action buttons. Max 10 (Apple cap).
           items:
@@ -3963,7 +3963,7 @@ components:
       properties:
         acknowledge:
           $ref: "#/components/schemas/NotificationAcknowledge"
-          description: "Repeat the notification until someone acknowledges it: any tap on an action without a url counts, and when there is none the server adds an Acknowledge button (id pw_ack). Track it with GET /notifications/receipts/{id} (the response's receipt). Not with push false or level passive. At most 25 active per account."
+          description: "Repeat the notification until someone acknowledges it: any tap on an action without a url that does not open the app (foreground false) counts, and when there is none the server adds an Acknowledge button (id pw_ack). Track it with GET /notifications/receipts/{id} (the response's receipt). Not with push false or level passive. At most 25 active per account."
         actions:
           description: Server-driven action buttons. Max 10 (Apple cap).
           items:
