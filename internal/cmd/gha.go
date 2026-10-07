@@ -150,10 +150,18 @@ func (a *App) runGHA() error {
 	root.SetArgs(argv)
 	runErr := root.Execute()
 
-	// key create and key roll return a new secret: mask it before the
-	// response reaches the log.
-	if key := str(decode(run.Body), "key"); strings.HasPrefix(key, "hlk_") {
+	// key create and key roll return a new key, and receipt secret a callback
+	// secret, which --key may derive from a key other than the token: mask
+	// them before the response reaches the log.
+	resp := decode(run.Body)
+	if key := str(resp, "key"); strings.HasPrefix(key, "hlk_") {
 		gha.Mask(a.Stdout, key)
+	}
+	if s := str(resp, "secret"); s != "" {
+		gha.Mask(a.Stdout, s)
+		if raw, ok := strings.CutPrefix(s, "whsec_"); ok && raw != "" {
+			gha.Mask(a.Stdout, raw)
+		}
 	}
 	if out.Len() > 0 {
 		fmt.Fprintf(a.Stdout, "::group::PushWard response\n%s", out.String())

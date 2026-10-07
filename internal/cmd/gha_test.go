@@ -163,6 +163,27 @@ func TestGHAMasksNewKey(t *testing.T) {
 	}
 }
 
+func TestGHAMasksCallbackSecret(t *testing.T) {
+	_, srv := newFake(t)
+	// --key derives it from another key than the token, which the run masks
+	// up front.
+	const secret = "whsec_I1p3Yj83UaqkDUbjL1juMcCeRaMo2WAxaTS/hpRZYfA="
+	env, out := ghaEnv(t, map[string]string{"token": "hlk_action", "command": "receipt secret --key hlk_0123456789abcdef0123456789abcdef"})
+	r := runCLI(t, srv, env, "", "gha")
+	if r.code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	echo := strings.Index(r.stdout, "::group::")
+	for _, s := range []string{secret, strings.TrimPrefix(secret, "whsec_")} {
+		if mask := strings.Index(r.stdout, "::add-mask::"+s+"\n"); mask < 0 || echo < 0 || mask > echo {
+			t.Errorf("%s not masked before the response is logged:\n%s", s, r.stdout)
+		}
+	}
+	if o := readOutputs(t, out); o["response"] != `{"secret":"`+secret+`"}` {
+		t.Errorf("outputs %v", o)
+	}
+}
+
 func TestGHAWaitForAnswer(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("POST /notifications", 201, `{"id":8,"answerable":true}`)

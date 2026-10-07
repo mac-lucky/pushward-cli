@@ -231,6 +231,8 @@ it on a terminal, which keeps it out of shell history.
 			if err != nil {
 				return err
 			}
+			// No request is made; record it for the Action like a response.
+			a.Body = data
 			return a.out().Printf(data, "%s", secret)
 		},
 	}
