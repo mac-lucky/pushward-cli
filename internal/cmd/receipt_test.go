@@ -125,12 +125,16 @@ func TestReceiptCancel(t *testing.T) {
 	if r.code != 0 || strings.TrimSpace(r.stdout) != "2" || mustJSON(t, f.calls[1].Body) != `{"tag":"db-1"}` {
 		t.Errorf("cancel --tag: exit %d %q %v", r.code, r.stdout, f.calls[1].Body)
 	}
+	r = runCLI(t, srv, nil, "", "receipt", "cancel", "--tag", "db-1", "--tag", "db-2")
+	if r.code != 0 || strings.TrimSpace(r.stdout) != `{"canceled":4}` || len(f.calls) != 4 || mustJSON(t, f.calls[3].Body) != `{"tag":"db-2"}` {
+		t.Errorf("cancel two tags: exit %d %q %d calls", r.code, r.stdout, len(f.calls))
+	}
 	for _, argv := range [][]string{{}, {"42", "--tag", "x"}, {"x"}, {"1", "2"}} {
 		if r := runCLI(t, srv, nil, "", append([]string{"receipt", "cancel"}, argv...)...); r.code != ExitUsage {
 			t.Errorf("cancel %v: exit %d", argv, r.code)
 		}
 	}
-	if len(f.calls) != 2 {
+	if len(f.calls) != 4 {
 		t.Errorf("%d calls", len(f.calls))
 	}
 }

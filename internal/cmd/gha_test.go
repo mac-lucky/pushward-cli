@@ -264,6 +264,21 @@ func TestGHAAck(t *testing.T) {
 	}
 }
 
+func TestGHACancelTags(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("POST /notifications/receipts/cancel", 200, `{"canceled":1}`)
+	env, out := ghaEnv(t, map[string]string{"token": "hlk_a", "command": "receipt cancel", "tags": "deploy\nprod\n"})
+	if r := runCLI(t, srv, env, "", "gha"); r.code != 0 {
+		t.Fatalf("exit %d\n%s", r.code, r.stdout)
+	}
+	if len(f.calls) != 2 || f.calls[0].Body["tag"] != "deploy" || f.calls[1].Body["tag"] != "prod" {
+		t.Errorf("calls %v", f.calls)
+	}
+	if o := readOutputs(t, out); o["response"] != `{"canceled":2}` {
+		t.Errorf("outputs %v", o)
+	}
+}
+
 func TestGHAPresealed(t *testing.T) {
 	f, srv := newFake(t)
 	t.Setenv("PUSHWARD_E2E_KEY", "")

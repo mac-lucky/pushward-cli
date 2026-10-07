@@ -63,8 +63,8 @@ inputs:
     description: Title of the acknowledge button (default Acknowledge). Implies ack.
   tags:
     description: >-
-      Tags of an acknowledged notification, one per line, for
-      "receipt cancel --tag <tag>".
+      Tags of an acknowledged notification, one per line. With command
+      "receipt cancel", stops every one sent with any of them.
   callback-url:
     description: >-
       https URL that gets a signed POST when an acknowledged notification is

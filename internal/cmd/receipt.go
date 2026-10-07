@@ -139,12 +139,13 @@ func describeReceipt(r map[string]any) string {
 }
 
 func newReceiptCancelCmd(a *App) *cobra.Command {
-	var tag string
+	var tags []string
 	c := &cobra.Command{
 		Use:   "cancel [id]",
 		Short: "Stop a notification from repeating",
 		Long: `Stop the repeats of one notification sent with --ack, or of every active
-one with the tag. A tag reaches only what the same integration key sent.
+one with the tag; given --tag more than once, of every one with any of them.
+A tag reaches only what the same integration key sent.
 The notifications already delivered stay on the devices; a receipt that
 already finished is left as it is.
 
@@ -154,9 +155,9 @@ already finished is left as it is.
 			switch {
 			case len(got) > 1:
 				return usagef("%s takes one id", cmd.CommandPath())
-			case len(got) == 1 && tag != "":
+			case len(got) == 1 && len(tags) > 0:
 				return usagef("give an id or --tag, not both")
-			case len(got) == 0 && tag == "":
+			case len(got) == 0 && len(tags) == 0:
 				return usagef("%s needs an id or --tag", cmd.CommandPath())
 			case len(got) == 1 && !isID(got[0]):
 				return usagef("invalid id %q: want a number", got[0])
@@ -165,12 +166,8 @@ already finished is left as it is.
 		},
 		Annotations: map[string]string{"operation": "cancelNotificationReceipt,cancelNotificationReceiptsByTag"},
 		RunE: func(cmd *cobra.Command, argv []string) error {
-			if tag != "" {
-				resp, err := a.call(cmd.Context(), "cancelNotificationReceiptsByTag", nil, nil, map[string]any{"tag": tag})
-				if err != nil {
-					return err
-				}
-				return a.out().Printf(resp.Body, "canceled %s tagged %s", plural(str(decode(resp.Body), "canceled"), "notification"), tag)
+			if len(tags) > 0 {
+				return a.cancelTagged(cmd.Context(), tags)
 			}
 			resp, err := a.call(cmd.Context(), "cancelNotificationReceipt", map[string]string{"id": argv[0]}, nil, nil)
 			if err != nil {
@@ -182,8 +179,29 @@ already finished is left as it is.
 			return a.out().Printf(resp.Body, "canceled the repeats of notification %s", argv[0])
 		},
 	}
-	c.Flags().StringVar(&tag, "tag", "", "cancel every active notification this key sent with this tag")
+	c.Flags().StringArrayVar(&tags, "tag", nil, "cancel every active notification this key sent with this tag (repeatable)")
 	return c
+}
+
+// cancelTagged sends one cancel per tag and reports the total. A
+// notification with two of the tags counts once: the second request finds
+// it already canceled.
+func (a *App) cancelTagged(ctx context.Context, tags []string) error {
+	total := 0
+	for _, tag := range tags {
+		resp, err := a.call(ctx, "cancelNotificationReceiptsByTag", nil, nil, map[string]any{"tag": tag})
+		if err != nil {
+			return err
+		}
+		n, _ := strconv.Atoi(str(decode(resp.Body), "canceled"))
+		total += n
+	}
+	data, err := json.Marshal(map[string]int{"canceled": total})
+	if err != nil {
+		return err
+	}
+	a.Body = data
+	return a.out().Printf(data, "canceled %s tagged %s", plural(strconv.Itoa(total), "notification"), strings.Join(tags, ", "))
 }
 
 func plural(n, noun string) string {
