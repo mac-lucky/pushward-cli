@@ -195,9 +195,9 @@ inside them: anything else answers 404. A personal key gets 422 for any target.
 
 ## Encrypted notifications
 
-When the user has set up an encryption key (`pushward e2e key-id` exits 0), `notify` and
-`schedule create` encrypt the title, subtitle, body and url before sending, with no change to
-how you call them. Only their devices holding the key can read that text. Level, actions,
+When the user has set up an encryption key (`pushward e2e key-id` exits 0), `notify`,
+`notification send` and `schedule create` encrypt the title, subtitle, body and url before
+sending, with no change to how you call them. Only their devices holding the key can read that text. Level, actions,
 metadata, thread, source and target stay readable to the server and to Apple, so never put a
 secret in those. Encrypted text has room for about 2,200 bytes in total, much less than the
 4096 a plain body can take.
