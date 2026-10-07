@@ -148,7 +148,7 @@ The key comes from `PUSHWARD_E2E_KEY`, then the config file. Once one is set, ev
 
 The sealed text has to fit a 3072-character envelope, about 2.2 KB. A longer body is refused before anything is sent; shorten it, or send it with `--no-encrypt`. Organization keys cannot send encrypted notifications yet.
 
-In the GitHub Action, pass the key from a secret as the `e2e-key` input and set `encrypt: true` next to it. A secret that does not exist, or is not passed to a pull request from a fork, comes through empty, and without `encrypt` the step would then send the text readable. GitHub also prints a step's inputs at the top of its log, so the `title` and `body` inputs are readable there even though the request is encrypted. For text that must stay private, write it to a file in an earlier step and pass `json: '@body.json'`.
+In the GitHub Action, pass the key from a secret as the `e2e-key` input and set `encrypt: true` next to it. A secret that does not exist, or is not passed to a pull request from a fork, comes through empty, and without `encrypt` the step would then send the text readable. With `encrypt: true`, a command that cannot encrypt fails the step too, and with a key set `api` refuses `/notifications` paths. GitHub also prints a step's inputs at the top of its log, so the `title` and `body` inputs are readable there even though the request is encrypted. For text that must stay private, write it to a file in an earlier step and pass `json: '@body.json'`.
 
 ```yaml
 - uses: mac-lucky/pushward-action@v1

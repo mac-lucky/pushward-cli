@@ -77,11 +77,14 @@ inputs:
       schedule create encrypt the title, subtitle, body and url; devices
       without the key show a placeholder. GitHub prints the step's inputs at
       the top of its log, so pass text that must stay private in a file
-      written by an earlier step, with json: '@body.json'.
+      written by an earlier step, with json: '@body.json'. With a key set,
+      api fails on a /notifications path, since it would send that text
+      readable.
   encrypt:
     description: >-
       Set to true to fail the step instead of sending readable text when no
-      encryption key is set.
+      encryption key is set, or when the command cannot encrypt (anything but
+      notify, notification send and schedule create).
   fields:
     description: >-
       Extra typed fields, one key=value per line, with dotted keys

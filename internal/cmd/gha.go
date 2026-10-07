@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"cmp"
 	"fmt"
+	"net/url"
+	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/kballard/go-shellquote"
@@ -214,6 +217,12 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 	if refusedInAction[top.Name()] {
 		return nil, "", usagef("command %q is not available in the Action", top.Name())
 	}
+	// encrypt: true must never end in readable text, so a command without
+	// --encrypt fails rather than ignoring the input.
+	errUnsealed := usagef("encryption was requested but %s cannot encrypt", target.CommandPath())
+	if enc, _ := strconv.ParseBool(in("encrypt")); enc && target.Flags().Lookup("encrypt") == nil {
+		return nil, "", errUnsealed
+	}
 
 	argv = slices.Clone(words)
 	for _, m := range inputFlags {
@@ -252,6 +261,13 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 	}
 
 	env := a.Getenv
+	// With a key set, the commands that send notifications seal them. api
+	// cannot, so it does not get to post notification text next to a key.
+	keyed := in("e2e-key") != "" || strings.TrimSpace(env(config.EnvE2EKey)) != ""
+	if args := target.Flags().Args(); keyed && target.CommandPath() == "pushward api" && len(args) > 0 && notificationsPath(args[0]) {
+		return nil, "", errUnsealed
+	}
+
 	def := func(flag, value string) {
 		if value == "" {
 			return
@@ -307,6 +323,17 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 		return nil, "", usagef("%s needs an id: put it in command, like %q", target.CommandPath(), strings.TrimPrefix(target.CommandPath(), "pushward ")+" 123")
 	}
 	return argv, slug, nil
+}
+
+// notificationsPath reports whether an api path, read the way api reads it,
+// lands under /notifications.
+func notificationsPath(p string) bool {
+	u, err := url.Parse("/" + strings.TrimPrefix(p, "/"))
+	if err != nil {
+		return false // api refuses it before sending
+	}
+	p = strings.ToLower(path.Clean(u.Path))
+	return p == "/notifications" || strings.HasPrefix(p, "/notifications/")
 }
 
 // presealed reports whether the body already carries an envelope sealed

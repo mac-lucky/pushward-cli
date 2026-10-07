@@ -266,3 +266,40 @@ func TestGHAPresealed(t *testing.T) {
 		}
 	}
 }
+
+func TestGHARefusesUnsealed(t *testing.T) {
+	f, srv := newFake(t)
+	t.Setenv("PUSHWARD_E2E_KEY", "")
+	f.reply("GET /notifications/receipts/9", 200, `{"notification_id":9,"status":"active"}`)
+	f.reply("GET /activities", 200, `{"items":[]}`)
+	post := "api -X POST /notifications -f title=X -f body=Y"
+	for name, tc := range map[string]struct {
+		inputs map[string]string
+		env    string
+		ok     bool
+	}{
+		"encrypt, api":           {inputs: map[string]string{"encrypt": "true", "command": post}},
+		"encrypt, receipt":       {inputs: map[string]string{"encrypt": "true", "command": "receipt get 9"}},
+		"encrypt false, receipt": {inputs: map[string]string{"encrypt": "false", "command": "receipt get 9"}, ok: true},
+		"key, api":               {inputs: map[string]string{"command": post}, env: testE2EKey},
+		"key input, api":         {inputs: map[string]string{"e2e-key": testE2EKey, "command": post}},
+		"key, api scheduled":     {inputs: map[string]string{"e2e-key": testE2EKey, "command": "api notifications/scheduled -f title=X"}},
+		"key, api dotted path":   {inputs: map[string]string{"e2e-key": testE2EKey, "command": "api /activities/../Notifications/ -f title=X"}},
+		"key, api escaped path":  {inputs: map[string]string{"e2e-key": testE2EKey, "command": "api /%6eotifications -f title=X"}},
+		"key, receipt get":       {inputs: map[string]string{"e2e-key": testE2EKey, "command": "receipt get 9"}, ok: true},
+		"key, api other path":    {inputs: map[string]string{"e2e-key": testE2EKey, "command": "api /activities"}, ok: true},
+		"no key, api":            {inputs: map[string]string{"command": "api /notifications/receipts/9"}, ok: true},
+	} {
+		tc.inputs["token"] = "hlk_action"
+		env, _ := ghaEnv(t, tc.inputs)
+		env["PUSHWARD_E2E_KEY"] = tc.env
+		f.calls = nil
+		r := runCLI(t, srv, env, "", "gha")
+		switch {
+		case tc.ok && (r.code != 0 || len(f.calls) != 1):
+			t.Errorf("%s: exit %d, %d calls\n%s", name, r.code, len(f.calls), r.stdout)
+		case !tc.ok && (r.code != ExitUsage || len(f.calls) != 0 || !strings.Contains(r.stdout, "encryption was requested but pushward ")):
+			t.Errorf("%s: exit %d, %d calls\n%s", name, r.code, len(f.calls), r.stdout)
+		}
+	}
+}
