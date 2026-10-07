@@ -121,7 +121,7 @@ and target stay readable: the server needs them to deliver.
 
 The key is read from PUSHWARD_E2E_KEY, then from the config file (e2e
 generate --save or e2e import put it there). Create it here or in the
-PushWard app (Settings, Encryption) and import it on the other side; e2e
+PushWard app (Settings > End-to-End Encryption) and import it on the other side; e2e
 key-id prints the Key ID to compare with the app. --no-encrypt sends one
 notification without it, and pushward api never encrypts.`,
 	}
@@ -171,7 +171,7 @@ func newE2EGenerateCmd(a *App) *cobra.Command {
 		Use:   "generate",
 		Short: "Create a new encryption key",
 		Long: `Create a random 256-bit key and print it with its Key ID. Import it in the
-PushWard app (Settings, Encryption) on the devices that should read the
+PushWard app (Settings > End-to-End Encryption) on the devices that should read the
 notifications; iCloud Keychain carries it to your other devices. --save
 also stores it in the config file, after which every notify is encrypted.
 

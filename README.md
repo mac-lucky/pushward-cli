@@ -138,7 +138,7 @@ pushward activity update deploy --target-tags wall
 With an encryption key, `notify`, `notification send` and `schedule create` encrypt the title, subtitle, body and url on your machine (AES-256-GCM, envelope format `pw1`). PushWard stores and forwards only the sealed text, and only devices holding the key can read it. Level, actions, metadata and the other fields the server delivers by stay readable. Devices need PushWard 1.17.0 or later; older builds show a placeholder.
 
 ```sh
-pushward e2e generate --save     # prints the key and its Key ID; import the key in the app (Settings, Encryption)
+pushward e2e generate --save     # prints the key and its Key ID; import the key in the app (Settings > End-to-End Encryption)
 pbpaste | pushward e2e import    # or store a key created in the app
 pushward e2e key-id              # compare with the Key ID the app shows
 pushward notify --title "Prod DB password rotated" --body "New one is in the vault under db/prod"
