@@ -17,8 +17,8 @@ pushward auth status
 
 Not installed: `brew install mac-lucky/tap/pushward`, or
 `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`. Ask before installing.
-Everything below works on 1.2.0 and later; the organization target flags need 1.3.0, and
-encryption and `--ack` need 1.4.0.
+Everything below works on 1.2.0 and later; the organization target flags need 1.3.0 (1.5.0
+on widgets), and encryption and `--ack` need 1.4.0.
 
 `auth status` exiting 3 means no usable key. The user has to fix that themselves, in their own
 terminal: `pushward auth login` prompts for the `hlk_` integration key from the app's
@@ -176,22 +176,32 @@ from the create output if you may need to cancel it.
 ## Organization keys
 
 With a key from a PushWard organization (a team account), sends go to the members' devices
-that the organization's routing rules allow. These flags need CLI 1.3.0 and narrow that
-further, by group name, device tag name or member user id:
+that the organization's routing rules allow. These flags need CLI 1.3.0 (1.5.0 on widgets)
+and narrow that further, by group name, device tag name or member user id:
 
 ```sh
 pushward notify --title "db-1 disk at 95%" --body "Paging on-call" --level time-sensitive --target-groups oncall
 pushward activity start agent-deploy-api --name "Deploy api" --text Building --target-tags wall
 pushward activity update agent-deploy-api --target-groups oncall,sre
 pushward activity update agent-deploy-api --no-target
+pushward widget create agent-queue --name Queue --template value --value 42 --label jobs --target-groups oncall
 ```
 
-`notify`, `schedule create`, `activity create`, `activity start` and `activity update` take
-`--target-groups`, `--target-tags` and `--target-members`. On an update the new target
-replaces the stored one and `--no-target` sends the activity back to everyone the rules
-allow; devices that lose it end it, devices that gain it start it. A key the admins limited
-to some groups and tags must stay inside them (403 otherwise) and only sees activities sent
-inside them: anything else answers 404. A personal key gets 422 for any target.
+`notify`, `schedule create`, `activity create`, `activity start`, `activity update`,
+`widget create` and `widget update` take `--target-groups`, `--target-tags` and
+`--target-members`. On an update the new target replaces the stored one and `--no-target`
+sends the activity or widget back to everyone the rules allow; devices that lose an activity
+end it, devices that gain it start it. A key the admins limited to some groups and tags must
+stay inside them (403 otherwise) and only sees activities and widgets sent inside them:
+anything else answers 404. A personal key gets 422 for any target.
+
+Organization widgets show on members' iPhone and iPad home screens, not on Apple Watch yet.
+All of an organization's widgets share one push window of at least 60 seconds, so
+`--push-throttle` is ignored and updating more than once a minute buys nothing.
+
+`email send` with an organization key only reaches addresses the organization registered
+and the recipient confirmed. The CLI has no command for adding one; if the user needs a new
+recipient, point them to https://pushward.app/docs/teams.
 
 ## Encrypted notifications
 

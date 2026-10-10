@@ -268,8 +268,8 @@ var activityLifecycleFields = []field{
 	{"dismissal-ttl", "dismissal_ttl", kSecondsZero, "keep it on the Lock Screen this long after it ends (max 4h)"},
 }
 
-// targetFields narrow who an organization key's activity or notification
-// reaches. A personal account's key gets a 422 for them.
+// targetFields narrow who an organization key's activity, notification or
+// widget reaches. A personal account's key gets a 422 for them.
 var targetFields = []field{
 	{"target-groups", "target.groups", kNames, "organization keys: comma-separated names of the groups that get it"},
 	{"target-tags", "target.tags", kNames, "organization keys: comma-separated device tag names; devices with any of them get it"},
@@ -317,6 +317,6 @@ var widgetContentFields = []field{
 
 var widgetMetaFields = []field{
 	{"name", "name", kString, "name shown in the widget picker"},
-	{"push-throttle", "push_throttle", kSeconds, "minimum time between pushes for this widget"},
+	{"push-throttle", "push_throttle", kSeconds, "minimum time between pushes for this widget (organization widgets share one window of at least 1m)"},
 	{"stale-after", "stale_after", kSeconds, "render as stale this long after the last update"},
 }

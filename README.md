@@ -126,12 +126,17 @@ Email only goes to recipients you have verified in the app.
 
 ## Organization keys
 
-With a key from a PushWard organization (a team account), `notify`, `schedule create`, `activity create`, `activity start` and `activity update` take `--target-groups`, `--target-tags` and `--target-members` (comma-separated group names, device tag names or user ids) to narrow who receives it. `activity update --no-target` clears the target again, which needs a key that reaches the whole organization. A personal key gets a 422 for the target flags.
+With a key from a PushWard organization (a team account), `notify`, `schedule create`, `activity create`, `activity start`, `activity update`, `widget create` and `widget update` take `--target-groups`, `--target-tags` and `--target-members` (comma-separated group names, device tag names or user ids) to narrow who receives it. `activity update --no-target` and `widget update --no-target` clear the target again, which needs a key that reaches the whole organization. A personal key gets a 422 for the target flags.
 
 ```sh
 pushward notify --title "db-1 disk at 95%" --body "Paging on-call" --target-groups oncall
 pushward activity update deploy --target-tags wall
+pushward widget create queue --template value --value 42 --label jobs --target-groups oncall
 ```
+
+An organization widget shows up on members' iPhone and iPad home screens (not on Apple Watch yet). Its pushes share one window per organization of at least 60 seconds, so `--push-throttle` does nothing there; updates in between are kept and arrive with the next push.
+
+Organization email goes only to the organization's own recipients, not to the members' personal ones. They are registered through the API with an organization key that has email permission and is not limited to some groups and tags, and each one confirms the address before the first message ([pushward.app/docs/teams](https://pushward.app/docs/teams)). The CLI has no command for that yet; `pushward api` can call it.
 
 ## End-to-end encryption
 

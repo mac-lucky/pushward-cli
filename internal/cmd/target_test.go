@@ -6,7 +6,7 @@ import (
 )
 
 // The --target-* flags put an organization target on every send, and
-// --no-target clears an activity's.
+// --no-target clears an activity's or a widget's.
 func TestTargetFlags(t *testing.T) {
 	const target = `{"groups":["oncall","sre"],"members":["u-1"],"tags":["wall"]}`
 	flags := []string{"--target-groups", "oncall,sre", "--target-tags", "wall", "--target-members", "u-1"}
@@ -19,6 +19,8 @@ func TestTargetFlags(t *testing.T) {
 		{"POST /notifications/scheduled", `{"id":3,"status":"scheduled"}`, []string{"schedule", "create", "--in", "2h", "--title", "t", "--body", "b"}},
 		{"POST /activities", `{"slug":"deploy","state":"ended"}`, []string{"activity", "create", "deploy"}},
 		{"PATCH /activities/deploy", `{"slug":"deploy","state":"ongoing"}`, []string{"activity", "update", "deploy"}},
+		{"POST /widgets", `{"slug":"cpu"}`, []string{"widget", "create", "cpu", "--template", "value", "--value", "12"}},
+		{"PATCH /widgets/cpu", `{"slug":"cpu"}`, []string{"widget", "update", "cpu"}},
 	} {
 		f, srv := newFake(t)
 		f.reply(tc.route, 201, tc.reply)
@@ -63,6 +65,24 @@ func TestActivityUpdateNoTarget(t *testing.T) {
 	r = runCLI(t, srv, nil, "", "activity", "update", "deploy", "--no-target", "--target-tags", "wall")
 	if r.code != ExitUsage || !strings.Contains(r.stderr, "--no-target") || len(f.calls) != 1 {
 		t.Errorf("--no-target with --target-tags: exit %d %q, %d calls", r.code, r.stderr, len(f.calls))
+	}
+}
+
+// A widget update that only clears the target still carries the empty
+// content the API requires.
+func TestWidgetUpdateNoTarget(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("PATCH /widgets/cpu", 200, `{"slug":"cpu"}`)
+	r := runCLI(t, srv, nil, "", "widget", "update", "cpu", "--no-target")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	if got := mustJSON(t, f.calls[0].Body); got != `{"content":{},"target":null}` {
+		t.Errorf("body %s, want the target cleared", got)
+	}
+	r = runCLI(t, srv, nil, "", "widget", "update", "cpu", "--no-target", "--target-groups", "oncall")
+	if r.code != ExitUsage || !strings.Contains(r.stderr, "--no-target") || len(f.calls) != 1 {
+		t.Errorf("--no-target with --target-groups: exit %d %q, %d calls", r.code, r.stderr, len(f.calls))
 	}
 }
 

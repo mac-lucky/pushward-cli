@@ -63,7 +63,7 @@ func newWidgetCreateCmd(a *App) *cobra.Command {
 		Annotations: map[string]string{"operation": "createWidget"},
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
-			conv, err := collectFields(cmd, slices.Concat(widgetMetaFields, widgetContentFields), a.Now())
+			conv, err := collectFields(cmd, slices.Concat(widgetMetaFields, widgetContentFields, targetFields), a.Now())
 			if err != nil {
 				return err
 			}
@@ -84,12 +84,14 @@ func newWidgetCreateCmd(a *App) *cobra.Command {
 	}
 	addFields(c, widgetMetaFields)
 	addFields(c, widgetContentFields)
+	addFields(c, targetFields)
 	bf.register(c)
 	return c
 }
 
 func newWidgetUpdateCmd(a *App) *cobra.Command {
 	var bf bodyFlags
+	var noTarget bool
 	c := &cobra.Command{
 		Use:   "update <slug>",
 		Short: "Update a widget",
@@ -99,9 +101,15 @@ their stored value, and null clears one.`,
 		Annotations: map[string]string{"operation": "updateWidget"},
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
-			conv, err := collectFields(cmd, slices.Concat(widgetMetaFields, widgetContentFields), a.Now())
+			conv, err := collectFields(cmd, slices.Concat(widgetMetaFields, widgetContentFields, targetFields), a.Now())
 			if err != nil {
 				return err
+			}
+			if noTarget {
+				if _, set := conv["target"]; set {
+					return usagef("--no-target cannot be used with --target-groups, --target-tags or --target-members")
+				}
+				conv["target"] = nil
 			}
 			b, err := bf.build(a, conv)
 			if err != nil {
@@ -123,6 +131,8 @@ their stored value, and null clears one.`,
 	}
 	addFields(c, widgetMetaFields)
 	addFields(c, widgetContentFields)
+	addFields(c, targetFields)
+	c.Flags().BoolVar(&noTarget, "no-target", false, "organization keys: clear the target, so everyone the routing rules allow gets it")
 	bf.register(c)
 	return c
 }
