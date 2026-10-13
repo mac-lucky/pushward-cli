@@ -2797,7 +2797,7 @@ components:
           maxLength: 64
           type: string
         encrypted:
-          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members import in PushWard 1.18 or later. Until PushWard enables encryption for organizations, they get 422 notification.encryption_unavailable."
+          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members add in PushWard 1.18 or later. If PushWard switches encryption off for organizations, they get 422 notification.encryption_unavailable."
           maxLength: 3072
           type: string
         icon_url:
@@ -2894,7 +2894,7 @@ components:
           maxLength: 64
           type: string
         encrypted:
-          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members import in PushWard 1.18 or later. Until PushWard enables encryption for organizations, they get 422 notification.encryption_unavailable."
+          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members add in PushWard 1.18 or later. If PushWard switches encryption off for organizations, they get 422 notification.encryption_unavailable."
           maxLength: 3072
           type: string
         icon_url:
@@ -4005,7 +4005,7 @@ components:
           readOnly: true
           type: string
         encrypted:
-          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members import in PushWard 1.18 or later. Until PushWard enables encryption for organizations, they get 422 notification.encryption_unavailable."
+          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members add in PushWard 1.18 or later. If PushWard switches encryption off for organizations, they get 422 notification.encryption_unavailable."
           maxLength: 3072
           type: string
         failure_reason:
