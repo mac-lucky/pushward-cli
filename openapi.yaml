@@ -2797,7 +2797,7 @@ components:
           maxLength: 64
           type: string
         encrypted:
-          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Not available to organization keys."
+          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members import in PushWard 1.18 or later. Until PushWard enables encryption for organizations, they get 422 notification.encryption_unavailable."
           maxLength: 3072
           type: string
         icon_url:
@@ -2894,7 +2894,7 @@ components:
           maxLength: 64
           type: string
         encrypted:
-          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Not available to organization keys."
+          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members import in PushWard 1.18 or later. Until PushWard enables encryption for organizations, they get 422 notification.encryption_unavailable."
           maxLength: 3072
           type: string
         icon_url:
@@ -3881,7 +3881,7 @@ components:
           format: uri
           type: string
         retry_after_ms:
-          description: Suggested retry delay in milliseconds. Set on 409 demo conflicts, 429 rate limits, and 503 service-unavailable responses; mirrors the Retry-After header but with sub-second precision.
+          description: Suggested retry delay in milliseconds. Set on 409 demo and checkout conflicts, 429 rate limits, and 503 service-unavailable responses; mirrors the Retry-After header but with sub-second precision.
           examples:
             - 60000
           format: int64
@@ -4005,16 +4005,17 @@ components:
           readOnly: true
           type: string
         encrypted:
-          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Not available to organization keys."
+          description: "End-to-end encrypted title, subtitle, body and url: a pw1 envelope sealed with the user's encryption key (see the encryption docs). Leave title, subtitle, body and url out when it is set; the stored and pushed title and body become placeholders that devices holding the key replace with the decrypted text. Everything else (level, sound, source, media, actions, metadata) stays plaintext. Organization keys can send encrypted notifications too, sealed with the organization's key: every member's devices need that key, which members import in PushWard 1.18 or later. Until PushWard enables encryption for organizations, they get 422 notification.encryption_unavailable."
           maxLength: 3072
           type: string
         failure_reason:
-          description: "Why the notification (for a repeating schedule: the latest occurrence) was not sent. receipt_limit: it asked for acknowledge while 25 acknowledged notifications were already active. key_revoked: the integration key that scheduled it was revoked, expired, or no longer has notifications level schedule. target_deleted: every group, tag and member an organization's target named was deleted or left the organization. Both end a repeating schedule, except that target_deleted only skips the send while the target names a member who could be invited back."
+          description: "Why the notification (for a repeating schedule: the latest occurrence) was not sent. receipt_limit: older schedules only; it asked for acknowledge while 25 acknowledged notifications were already active (such a send now goes out as a plain notification instead). key_revoked: the integration key that scheduled it was revoked, expired, or no longer has notifications level schedule. target_deleted: every group, tag and member an organization's target named was deleted or left the organization. Both end a repeating schedule, except that target_deleted only skips the send while the target names a member who could be invited back. org_inactive: the organization was not active when it was due; a repeating schedule carries on with its next send."
           enum:
             - quota_exceeded
             - receipt_limit
             - key_revoked
             - target_deleted
+            - org_inactive
             - internal_error
           readOnly: true
           type: string
@@ -4461,7 +4462,7 @@ components:
           readOnly: true
           type: string
         subscribed:
-          description: Whether the user has an active App Store subscription. Required for create/update activity calls.
+          description: "Whether the account has the paid tier: an active App Store subscription, or a seat in an organization that provides it. For an organization's key, whether the organization is active. Required for create/update activity calls."
           readOnly: true
           type: boolean
         widget_updates_limit:
@@ -6429,10 +6430,10 @@ paths:
                     title: Bad Request
                     type: https://pushward.app/errors/bad-request
                 default_locked:
-                  summary: Changes the default key's activity level, slug restrictions or expiry
+                  summary: Changes the default key's permissions, slug restrictions or expiry
                   value:
                     code: integration_key.default_locked
-                    detail: cannot change the activity level, slug restrictions or expiry of the default integration key
+                    detail: cannot change the permissions, slug restrictions or expiry of the default integration key
                     instance: /requests/9f86d081884c7d65
                     status: 400
                     title: Bad Request
@@ -6902,10 +6903,10 @@ paths:
                     title: Unprocessable Entity
                     type: https://pushward.app/errors/unprocessable-entity
                 encryption_unavailable:
-                  summary: Organization keys cannot send encrypted notifications
+                  summary: PushWard has not enabled encryption for organizations yet
                   value:
                     code: notification.encryption_unavailable
-                    detail: end-to-end encrypted notifications are not available for organizations
+                    detail: PushWard has not enabled end-to-end encrypted notifications for organizations yet
                     instance: /requests/9f86d081884c7d65
                     status: 422
                     title: Unprocessable Entity
@@ -7780,7 +7781,7 @@ paths:
       tags:
         - Notifications
     post:
-      description: Queues a notification to be sent at `send_at` (at most 365 days ahead). The body is a `POST /notifications` body plus `send_at`, validated the same way. Add `recurrence` (a cron expression and a time zone) to repeat it; `send_at` is then optional and marks where the schedule starts. A repeating schedule keeps one id and one pending slot for the whole series, and canceling it stops the series. Each send counts against the notification quota when it happens, not when it is scheduled; an account already out of quota gets the same `429 quota.exceeded` as `POST /notifications`. Up to 25 scheduled notifications can be pending per account. Revoking the integration key that scheduled one cancels it. With `acknowledge`, the receipt is created when it is sent; if acknowledged notifications are switched off at that moment it goes out as a plain notification, and `GET /notifications/receipts/{id}` answers 404 for it.
+      description: Queues a notification to be sent at `send_at` (at most 365 days ahead). The body is a `POST /notifications` body plus `send_at`, validated the same way. Add `recurrence` (a cron expression and a time zone) to repeat it; `send_at` is then optional and marks where the schedule starts. A repeating schedule keeps one id and one pending slot for the whole series, and canceling it stops the series. Each send counts against the notification quota when it happens, not when it is scheduled; an account already out of quota gets the same `429 quota.exceeded` as `POST /notifications`. Up to 25 scheduled notifications can be pending per account. Revoking the integration key that scheduled one cancels it. With `acknowledge`, the receipt is created when it is sent; if acknowledged notifications are switched off at that moment, or 25 acknowledged notifications are already active, it goes out as a plain notification, and `GET /notifications/receipts/{id}` answers 404 for it.
       operationId: createScheduledNotification
       requestBody:
         content:
@@ -7917,10 +7918,10 @@ paths:
                     title: Unprocessable Entity
                     type: https://pushward.app/errors/unprocessable-entity
                 encryption_unavailable:
-                  summary: Organization keys cannot send encrypted notifications
+                  summary: PushWard has not enabled encryption for organizations yet
                   value:
                     code: notification.encryption_unavailable
-                    detail: end-to-end encrypted notifications are not available for organizations
+                    detail: PushWard has not enabled end-to-end encrypted notifications for organizations yet
                     instance: /requests/9f86d081884c7d65
                     status: 422
                     title: Unprocessable Entity

@@ -163,7 +163,7 @@ func TestAPINeverEncrypts(t *testing.T) {
 func TestEncryptionUnavailableHint(t *testing.T) {
 	f, srv := newFake(t)
 	t.Setenv("PUSHWARD_E2E_KEY", testE2EKey)
-	f.reply("POST /notifications", 422, `{"status":422,"code":"notification.encryption_unavailable","detail":"organization keys cannot send encrypted notifications"}`)
+	f.reply("POST /notifications", 422, `{"status":422,"code":"notification.encryption_unavailable","detail":"PushWard has not enabled end-to-end encrypted notifications for organizations yet"}`)
 	r := runCLI(t, srv, nil, "", "notify", "--title", "a", "--body", "b")
 	if r.code != ExitError || !strings.Contains(r.stderr, "pass --no-encrypt") {
 		t.Errorf("exit %d %q", r.code, r.stderr)

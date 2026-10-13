@@ -140,7 +140,8 @@ func repeats(n map[string]any) string {
 }
 
 // explain adds the way out to an error a configured key caused: the server
-// refuses encrypted notifications from organization keys.
+// refuses encrypted notifications from organization keys when PushWard has
+// not enabled encryption for organizations.
 func (n *notificationInput) explain(err error) error {
 	var ae *api.Error
 	if n.kid != "" && !n.encrypt && errors.As(err, &ae) && ae.Code == api.CodeEncryptionUnavailable {

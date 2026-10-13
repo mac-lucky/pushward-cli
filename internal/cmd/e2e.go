@@ -172,8 +172,10 @@ func newE2EGenerateCmd(a *App) *cobra.Command {
 		Short: "Create a new encryption key",
 		Long: `Create a random 256-bit key and print it with its Key ID. Import it in the
 PushWard app (Settings > End-to-End Encryption) on the devices that should read the
-notifications; iCloud Keychain carries it to your other devices. --save
-also stores it in the config file, after which every notify is encrypted.
+notifications; iCloud Keychain carries it to your other devices. For an
+organization's key, members add it under Organization Keys instead (PushWard
+1.18 or later), not with Add Existing Key. --save also stores it in the
+config file, after which every notify is encrypted.
 
   pushward e2e generate --save`,
 		Args: checkArgs,

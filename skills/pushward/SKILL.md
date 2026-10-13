@@ -218,10 +218,12 @@ pushward notify --title "Prod DB password rotated" --body "New one is in the vau
 ```
 
 `--encrypt` makes the send fail when no key is set rather than go out readable; use it when the
-user asked for encryption. `--no-encrypt` sends one in the clear, for example with an
-organization key, which cannot send encrypted (`notification.encryption_unavailable`). Leave
-`pushward e2e generate` and `pushward e2e import` to the user: they print or take the key
-itself. `pushward api` never encrypts. Needs CLI 1.4.0.
+user asked for encryption. `--no-encrypt` sends one in the clear. With an organization key
+the key set up is the organization's, and members read the text once they add it in PushWard
+1.18 or later. A 422 `notification.encryption_unavailable` there means PushWard has not
+enabled encryption for organizations: tell the user rather than resending with `--no-encrypt`
+on your own. Leave `pushward e2e generate` and `pushward e2e import` to the user: they print
+or take the key itself. `pushward api` never encrypts. Needs CLI 1.4.0.
 
 ## Reading output
 
