@@ -195,7 +195,7 @@ end it, devices that gain it start it. A key the admins limited to some groups a
 stay inside them (403 otherwise) and only sees activities and widgets sent inside them:
 anything else answers 404. A personal key gets 422 for any target.
 
-Organization widgets show on members' iPhone and iPad home screens, not on Apple Watch yet.
+Organization widgets show on members' iPhone and iPad home screens, and on Apple Watch from PushWard 1.18.0.
 All of an organization's widgets share one push window of at least 60 seconds, so
 `--push-throttle` is ignored and updating more than once a minute buys nothing.
 
