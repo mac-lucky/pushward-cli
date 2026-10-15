@@ -1,6 +1,6 @@
 module github.com/mac-lucky/pushward-cli
 
-go 1.26.6
+go 1.27.2
 
 require (
 	github.com/itchyny/gojq v0.12.19
