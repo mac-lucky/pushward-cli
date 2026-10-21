@@ -38,6 +38,7 @@ const (
 	kCSV         // a,b,c -> ["a","b","c"]
 	kNames       // like kCSV, but an empty item is an error
 	kStep        // 2 -> current_step, 2/5 -> current_step and total_steps
+	kBool        // true or false, given as a value: --paused false must not read as a positional
 )
 
 func addFields(cmd *cobra.Command, fields []field) {
@@ -77,6 +78,12 @@ func setField(obj map[string]any, f field, raw string, now time.Time) error {
 			return fmt.Errorf("want a number, got %q", raw)
 		}
 		v = json.Number(raw)
+	case kBool:
+		b, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf("want true or false, got %q", raw)
+		}
+		v = b
 	case kSeconds, kSecondsZero:
 		n, err := parseSeconds(raw)
 		if err != nil {
@@ -240,7 +247,7 @@ func buttons(flag string, vals []string) ([]any, error) {
 }
 
 var activityContentFields = []field{
-	{"template", "content.template", kString, "template: generic, countdown, steps, alert, gauge, timeline, board, log, media, approval"},
+	{"template", "content.template", kString, "template: generic, timer (also accepted as countdown), steps, alert, gauge, timeline, board, log, media, approval"},
 	{"text", "content.state", kString, "status text on the card (content.state)"},
 	{"subtitle", "content.subtitle", kString, "secondary line"},
 	{"progress", "content.progress", kNumber, "progress from 0 to 1"},
@@ -259,6 +266,10 @@ var activityContentFields = []field{
 	{"max", "content.max_value", kNumber, "gauge template: range maximum"},
 	{"unit", "content.unit", kString, "unit label (gauge, timeline)"},
 	{"severity", "content.severity", kString, "alert template: critical, warning, or info"},
+	{"direction", "content.direction", kString, "timer template: down (default) counts to the end, up counts up from the start with no end"},
+	{"goal", "content.goal", kSeconds, "timer template counting up: target like 2h; past it the card shows overtime"},
+	{"show-ruler", "content.show_ruler", kBool, "timer template: false hides the ruler (default true)"},
+	{"paused", "content.paused", kBool, "timer template: true pauses the clock, false resumes it"},
 }
 
 var activityLifecycleFields = []field{

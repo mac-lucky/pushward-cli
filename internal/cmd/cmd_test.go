@@ -239,6 +239,28 @@ func TestActivityStart(t *testing.T) {
 
 func jsonInt(n int64) string { b, _ := json.Marshal(n); return string(b) }
 
+func TestActivityTimerFields(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("PATCH /activities/nap", 200, `{"slug":"nap","state":"ongoing"}`)
+	r := runCLI(t, srv, nil, "", "activity", "update", "nap", "--template", "timer",
+		"--direction", "up", "--goal", "1h30m", "--show-ruler", "false", "--paused", "true")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	want := `{"content":{"direction":"up","goal":5400,"paused":true,"show_ruler":false,"template":"timer"}}`
+	if got := mustJSON(t, f.calls[0].Body); got != want {
+		t.Errorf("patch body\n got  %s\n want %s", got, want)
+	}
+
+	// Anything but true or false is refused before a request goes out.
+	if r := runCLI(t, srv, nil, "", "activity", "update", "nap", "--paused", "yes"); r.code != ExitUsage {
+		t.Errorf("--paused yes: exit %d", r.code)
+	}
+	if len(f.calls) != 1 {
+		t.Errorf("a bad --paused reached the API: %+v", f.calls[1:])
+	}
+}
+
 func TestActivityEndSuccessTwoPhase(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("GET /activities/build", 200, `{"slug":"build","state":"ongoing","content":{"template":"steps","total_steps":4,"current_step":2,"live_progress":true}}`)

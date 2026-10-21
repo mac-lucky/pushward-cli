@@ -108,6 +108,15 @@ pushward activity start release --template approval --text "Ship 2.4?" --option 
 pushward activity wait release --timeout 30m --jq .content.answer.option
 ```
 
+The timer template counts down to `--eta` or `--duration`, or with `--direction up` it shows how long something has been going. The server runs the clock, so it needs no updates in between:
+
+```sh
+pushward activity start soak --name "Soak test" --template timer --direction up --goal 2h --text Running
+pushward activity update soak --paused true
+```
+
+`--goal` turns the card orange once it is passed, `--paused false` resumes, and `--show-ruler false` drops the ruler. Counting up and pausing need the iOS app 1.19.0 or later. `countdown`, the template's old name, still works and is what the API reports back.
+
 ## Widgets, schedules, email
 
 ```sh

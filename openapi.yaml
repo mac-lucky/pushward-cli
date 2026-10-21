@@ -23,6 +23,7 @@ components:
               media: "#/components/schemas/ContentMedia"
               steps: "#/components/schemas/ContentSteps"
               timeline: "#/components/schemas/ContentTimeline"
+              timer: "#/components/schemas/ContentCountdown"
             propertyName: template
           oneOf:
             - $ref: "#/components/schemas/ContentGeneric"
@@ -815,13 +816,13 @@ components:
       type: object
     ContentCountdown:
       additionalProperties: true
-      description: Countdown timer with start_date/end_date or duration. Server sends a warning push at warning_threshold and an end push when the timer expires.
+      description: "Timer: counts down to end_date (direction down, the default; start_date/end_date or duration), or up from start_date (direction up), e.g. how long someone has been asleep. Send \"template\": \"timer\" or its original name \"countdown\"; responses always report countdown. Counting down, the server sends a warning push at warning_threshold and an end push when end_date passes. Counting up there is no end of its own: an optional goal fills a ruler toward a target, after which the card turns orange and keeps counting as overtime; nothing needs to be pushed while it runs, the server keeps it alive past the iOS 8-hour limit (up to about 3 days, or the stale_ttl you set), and ending it freezes the card at the final duration. Both directions pause with paused: true / false. Counting up and pausing need the iOS app 1.19.0 or later; older builds do not show either, so always set state."
       properties:
         accent_color:
           description: "Accent color: named color or hex (#RRGGBB / #RRGGBBAA)."
           type: string
         alarm:
-          description: "Opt-in: schedule an iOS AlarmKit alarm at end_date. Requires end_date. Once set, persists across partial updates until cleared with alarm:null or a transition to ENDED. iOS 26+ only."
+          description: "Opt-in: schedule an iOS AlarmKit alarm at end_date. Requires end_date. Once set, persists across partial updates until cleared with alarm:null or a transition to ENDED. iOS 26+ only. Not used when direction is up."
           type: boolean
         background_color:
           description: "Background color: named color or hex."
@@ -831,11 +832,17 @@ components:
           maxLength: 4
           type: string
         completion_message:
-          description: Text shown when the countdown expires (default Completed).
+          description: Text shown when the countdown expires (default Completed). Not used when direction is up.
           maxLength: 512
           type: string
+        direction:
+          description: "down (the default when omitted) counts down to end_date; up counts up from start_date and takes no end_date, duration, warning_threshold, alarm, snooze_seconds or completion_message (a 422 when sent). Switching to up, or from another template, starts a new run: an unsent start_date is replaced by now and the down-only fields are dropped. Switching back to down drops goal and the pause state and needs end_date or duration again."
+          enum:
+            - down
+            - up
+          type: string
         duration:
-          description: Integer seconds (60) or a duration string ("60s", "5m", "1h30m"). Sets start_date = now and end_date = now + duration. For mid-flight updates that should preserve the original timer, send end_date directly. If both duration and end_date are provided, end_date wins.
+          description: Integer seconds (60) or a duration string ("60s", "5m", "1h30m"). Sets start_date = now and end_date = now + duration. For mid-flight updates that should preserve the original timer, send end_date directly. If both duration and end_date are provided, end_date wins. Not used when direction is up.
           oneOf:
             - maximum: 157788000
               minimum: 1
@@ -843,12 +850,33 @@ components:
             - pattern: ^(\d+|(\d+[hms])+)$
               type: string
         end_date:
-          description: Unix timestamp for countdown end. Required if duration is not set. Wins over duration when both are set - duration is ignored.
+          description: "Unix timestamp for countdown end. Required when direction is down and duration is not set. Wins over duration when both are set: duration is ignored. Not used when direction is up."
           type: integer
+        goal:
+          description: "Direction up only: an optional target, integer seconds (7200) or a duration string (\"2h\", \"90m\"); stored and returned as integer seconds. The card fills a ruler toward it, then turns orange and keeps counting as overtime. Cleared with null."
+          oneOf:
+            - maximum: 157788000
+              minimum: 1
+              type: integer
+            - pattern: ^(\d+|(\d+[hms])+)$
+              type: string
         icon:
           description: "Icon name. SF Symbol (e.g. washer, flame) or Material Design Icon with mdi: prefix (e.g. mdi:thermometer)."
           maxLength: 128
           type: string
+        paused:
+          description: "true pauses a running clock, false resumes a paused one, in either direction. Re-sending the current state changes nothing. Counting up, the time spent paused is left out of the clock; counting down, a resume moves end_date (and start_date) on by the paused time, so the time left is where it was. A countdown that already finished cannot be paused (422). Never stored: read paused_at and paused_seconds instead."
+          type: boolean
+          writeOnly: true
+        paused_at:
+          description: "Server-set unix timestamp the clock was paused at; absent while it runs. Set by paused: true. Counting up, an ended clock stops here if it was paused when it ended, else at the activity's ended_at."
+          readOnly: true
+          type: integer
+        paused_seconds:
+          description: "Direction up only: server-kept total seconds spent paused so far, updated by paused: false. The clock shows (paused_at, else ended_at once ended, else now) minus start_date minus paused_seconds."
+          minimum: 0
+          readOnly: true
+          type: integer
         progress:
           description: Progress value [0.0 - 1.0]
           maximum: 1
@@ -902,8 +930,11 @@ components:
           required:
             - url
           type: object
+        show_ruler:
+          description: Whether the card draws its ruler. Defaults to true when omitted; the server only stores and forwards it.
+          type: boolean
         snooze_seconds:
-          description: How many seconds POST /activities/{slug}/snooze extends end_date, and the iOS AlarmKit postAlert (snooze) window. Defaults to 300 (5 min) when omitted. Only meaningful with alarm:true.
+          description: How many seconds POST /activities/{slug}/snooze extends end_date, and the iOS AlarmKit postAlert (snooze) window. Defaults to 300 (5 min) when omitted. Only meaningful with alarm:true. Not used when direction is up.
           maximum: 3600
           minimum: 60
           type: integer
@@ -912,7 +943,7 @@ components:
           readOnly: true
           type: integer
         start_date:
-          description: Unix timestamp when countdown began. Server preserves the stored value on partial updates that send end_date without start_date or duration.
+          description: "Counting down: unix timestamp when the countdown began; the server preserves the stored value on partial updates that send end_date without start_date or duration. Counting up: the instant the clock counts up from; may be in the past and at most 5 minutes ahead (clock drift), defaults to now when the run starts (and when an ended activity goes ongoing again without one), and sending a different start_date restarts the clock and clears the stored pause time."
           type: integer
         state:
           description: Short status text (e.g. Washing, Build Container Image).
@@ -955,8 +986,9 @@ components:
             - url
           type: object
         template:
-          description: Template type that determines the Live Activity layout.
+          description: Template type that determines the Live Activity layout. "timer" is this template's name; "countdown", its original name, is still accepted and is what responses report.
           enum:
+            - timer
             - countdown
           type: string
         text_color:
@@ -1011,7 +1043,7 @@ components:
           readOnly: true
           type: boolean
         warning_threshold:
-          description: Seconds before end_date when accent color turns orange and a warning push is sent. Once set, persists across updates until explicitly cleared with null.
+          description: Seconds before end_date when accent color turns orange and a warning push is sent. Once set, persists across updates until explicitly cleared with null. Not used when direction is up.
           minimum: 0
           type: integer
       required:
@@ -4268,6 +4300,7 @@ components:
               media: "#/components/schemas/ContentMedia"
               steps: "#/components/schemas/ContentSteps"
               timeline: "#/components/schemas/ContentTimeline"
+              timer: "#/components/schemas/ContentCountdown"
             propertyName: template
           oneOf:
             - $ref: "#/components/schemas/ContentGeneric"
@@ -4350,6 +4383,11 @@ components:
           type:
             - string
             - "null"
+        name:
+          description: New human-readable name for the integration key
+          maxLength: 256
+          minLength: 1
+          type: string
         notifications:
           description: "Legacy: true sets permissions.notifications to schedule, false to none"
           type: boolean
@@ -4719,10 +4757,14 @@ info:
 
     ## Countdown Lifecycle
 
-    Countdown activities with `end_date` are automatically managed by the server:
+    Activities on the `timer` template (also accepted as `countdown`, the name responses report) count down to `end_date`, or with `direction: up` count up from `start_date` (default: the first write). The server manages both:
 
     - **Warning push:** When `warning_threshold` seconds remain, the server sends an update with `accent_color: orange`
     - **Completion push:** When `end_date` is reached, the server ends the activity with `completion_message` (or "Completed") and `progress: 1.0`
+    - **Counting up:** an up clock has no end of its own; with `goal` set, the server re-sends the card when the goal passes so it switches to its overtime look
+    - **Pause / resume:** `paused: true` stops the clock in either direction, `paused: false` restarts it; the server keeps `paused_at` (and, counting up, `paused_seconds`), and a resumed countdown's `end_date` moves on by the paused time
+    - **Long runs:** an up clock or a paused countdown is kept alive past the iOS 8-hour limit (up to about 3 days), unless its `stale_ttl` passes first
+    - **End:** ending the activity freezes the card at its final value
 
     No client action is needed after the initial start -- the server handles the full lifecycle.
 

@@ -30,15 +30,30 @@ pushward activity update agent-deploy --step 2/3 --text Testing
 `--step N/TOTAL` sets both numbers; TOTAL goes up to 64. Labels are optional and get cut short
 when there are many steps.
 
-## countdown: a timer the server runs
+## timer: a clock the server runs
 
 ```sh
-pushward activity start agent-cooldown --name "Rate limit" --template countdown --duration 25m --ended-ttl 30m \
+pushward activity start agent-cooldown --name "Rate limit" --template timer --duration 25m --ended-ttl 30m \
   -F content.warning_threshold=300 -f content.completion_message="Retrying now"
 ```
 
 One start is enough: the server sends the warning (accent turns orange `warning_threshold`
-seconds before the end) and the completion itself.
+seconds before the end) and the completion itself. The template's older name, `countdown`, is
+still accepted, and responses report that one.
+
+To show how long something has been running instead, count up:
+
+```sh
+pushward activity start agent-soak --name "Soak test" --template timer --direction up --goal 2h --ended-ttl 30m
+pushward activity update agent-soak --paused true
+pushward activity update agent-soak --paused false
+```
+
+It counts from now (or from `-F content.start_date=<unix seconds>`) and has no end of its own, so
+nothing needs sending while it runs; end it when the work is done. `--goal` fills a ruler, then
+the card turns orange and keeps counting as overtime. `--paused` works in both directions and the
+paused time is left out. `--show-ruler false` hides the ruler. Counting up and pausing need the
+iOS app 1.19.0; older builds show neither, so keep `--text` meaningful.
 
 ## alert: something is wrong
 
