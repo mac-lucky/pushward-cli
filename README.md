@@ -143,7 +143,7 @@ pushward activity update deploy --target-tags wall
 pushward widget create queue --template value --value 42 --label jobs --target-groups oncall
 ```
 
-An organization widget shows up on members' iPhone and iPad home screens, and on Apple Watch (watch app and complications) from PushWard 1.18.0. Its pushes share one window per organization of at least 60 seconds, so `--push-throttle` does nothing there; updates in between are kept and arrive with the next push.
+An organization widget shows up on members' home screens, and on Apple Watch (watch app and complications) from PushWard 1.18.0. Its pushes share one window per organization of at least 60 seconds, so `--push-throttle` does nothing there; updates in between are kept and arrive with the next push.
 
 Organization email goes only to the organization's own recipients, not to the members' personal ones. They are registered through the API with an organization key that has email permission and is not limited to some groups and tags, and each one confirms the address before the first message ([pushward.app/docs/teams](https://pushward.app/docs/teams)). The CLI has no command for that yet; `pushward api` can call it.
 

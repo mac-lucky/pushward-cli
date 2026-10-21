@@ -1,6 +1,6 @@
 ---
 name: pushward
-description: Reach the user's iPhone through the pushward CLI - push notifications when a task finishes or gets stuck, a question with buttons that waits for their tap, a Live Activity on the Lock Screen and Dynamic Island showing progress, a home screen widget value, a scheduled reminder, or an email. Use when the user says things like "notify me when done", "ping my phone", "ask me before you deploy", "show progress on my lock screen", "remind me tomorrow", and a shell can run `pushward`. If PushWard MCP tools are connected instead, use those.
+description: Reach the user's phone through the pushward CLI - push notifications when a task finishes or gets stuck, a question with buttons that waits for their tap, a Live Activity on the Lock Screen and Dynamic Island showing progress, a home screen widget value, a scheduled reminder, or an email. Use when the user says things like "notify me when done", "ping my phone", "ask me before you deploy", "show progress on my lock screen", "remind me tomorrow", and a shell can run `pushward`. If PushWard MCP tools are connected instead, use those.
 ---
 
 # PushWard CLI
@@ -195,7 +195,7 @@ end it, devices that gain it start it. A key the admins limited to some groups a
 stay inside them (403 otherwise) and only sees activities and widgets sent inside them:
 anything else answers 404. A personal key gets 422 for any target.
 
-Organization widgets show on members' iPhone and iPad home screens, and on Apple Watch from PushWard 1.18.0.
+Organization widgets show on members' home screens, and on Apple Watch from PushWard 1.18.0.
 All of an organization's widgets share one push window of at least 60 seconds, so
 `--push-throttle` is ignored and updating more than once a minute buys nothing.
 
