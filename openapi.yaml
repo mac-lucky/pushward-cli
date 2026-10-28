@@ -278,6 +278,14 @@ components:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
         fired_at:
           description: Unix timestamp when the alert fired.
           type: integer
@@ -484,6 +492,14 @@ components:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
         details:
           description: Up to two label/value context rows between the question and the buttons. With details present keep the activity name short and interrogative - the rows take the space the question text had.
           items:
@@ -648,6 +664,14 @@ components:
           type: string
         compact_label:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
         icon:
@@ -831,6 +855,14 @@ components:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
         completion_message:
           description: Text shown when the countdown expires (default Completed). Not used when direction is up.
           maxLength: 512
@@ -865,7 +897,7 @@ components:
           maxLength: 128
           type: string
         paused:
-          description: "true pauses a running clock, false resumes a paused one, in either direction. Re-sending the current state changes nothing. Counting up, the time spent paused is left out of the clock; counting down, a resume moves end_date (and start_date) on by the paused time, so the time left is where it was. A countdown that already finished cannot be paused (422). Never stored: read paused_at and paused_seconds instead."
+          description: "true pauses a running clock, false resumes a paused one, in either direction. Re-sending the current state changes nothing, unless end_date or duration comes with it: counting down, those set a new window, which drops the earlier pause. Sent to an ended timer it changes nothing, and neither does a re-sent end_date there, so the final reading stays. Counting up, the time spent paused is left out of the clock; counting down, a resume moves end_date (and start_date) on by the paused time, so the time left is where it was. A countdown that ran out but has not ended yet cannot be paused (422). Never stored: read paused_at and paused_seconds instead."
           type: boolean
           writeOnly: true
         paused_at:
@@ -1064,6 +1096,14 @@ components:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
         decimals:
           description: "Decimal places for value display. Omitted: automatic formatting."
           maximum: 10
@@ -1251,6 +1291,14 @@ components:
           type: string
         compact_label:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
         duration:
@@ -1456,6 +1504,14 @@ components:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
         icon:
           description: "Icon name. SF Symbol (e.g. washer, flame) or Material Design Icon with mdi: prefix (e.g. mdi:thermometer)."
           maxLength: 128
@@ -1639,6 +1695,14 @@ components:
           type: string
         compact_label:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
         controls:
@@ -2269,6 +2333,14 @@ components:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
         current_step:
           description: The step currently running, counting from 1 (0 = not started). Shown as current_step/total_steps. Required when template is steps.
           minimum: 0
@@ -2501,6 +2573,14 @@ components:
           type: string
         compact_label:
           description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
           maxLength: 4
           type: string
         decimals:

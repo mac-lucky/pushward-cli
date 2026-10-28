@@ -261,6 +261,28 @@ func TestActivityTimerFields(t *testing.T) {
 	}
 }
 
+func TestActivityCompactTrailingFields(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("PATCH /activities/flight", 200, `{"slug":"flight","state":"ongoing"}`)
+	r := runCLI(t, srv, nil, "", "activity", "update", "flight", "--compact-label", "A359",
+		"--compact-trailing-icon", "airplane.departure", "--compact-trailing-label", "GA")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	want := `{"content":{"compact_label":"A359","compact_trailing_icon":"airplane.departure","compact_trailing_label":"GA"}}`
+	if got := mustJSON(t, f.calls[0].Body); got != want {
+		t.Errorf("patch body\n got  %s\n want %s", got, want)
+	}
+
+	// An empty value goes out as "" and hands the slot back to the template.
+	if r := runCLI(t, srv, nil, "", "activity", "update", "flight", "--compact-trailing-label", ""); r.code != 0 {
+		t.Fatalf("clear: exit %d: %s", r.code, r.stderr)
+	}
+	if got, want := mustJSON(t, f.calls[1].Body), `{"content":{"compact_trailing_label":""}}`; got != want {
+		t.Errorf("clear body\n got  %s\n want %s", got, want)
+	}
+}
+
 func TestActivityEndSuccessTwoPhase(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("GET /activities/build", 200, `{"slug":"build","state":"ongoing","content":{"template":"steps","total_steps":4,"current_step":2,"live_progress":true}}`)

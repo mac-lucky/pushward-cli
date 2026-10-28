@@ -1,8 +1,9 @@
 # Live Activity templates
 
 Every template takes `--text` (the status line), `--subtitle`, `--icon` (SF Symbol or
-`mdi:<name>`), `--color` and `--compact-label` (up to 4 characters for the Dynamic Island), and
-all but approval take `--url`. The rest differs per template. Every `start` below carries
+`mdi:<name>`), `--color`, `--compact-label` (up to 4 characters for the Dynamic Island's leading
+slot) and `--compact-trailing-icon` or `--compact-trailing-label` for its trailing slot, and all
+but approval take `--url`. The rest differs per template. Every `start` below carries
 `--ended-ttl` for the reason in SKILL.md: ended activities otherwise count against the
 account's 50 for 30 days. Fields without a flag go in with `-F content.<field>=...`
 (typed) or `-f content.<field>=...` (string). Updates are merge patches: what you leave out keeps
@@ -29,6 +30,21 @@ pushward activity update agent-deploy --step 2/3 --text Testing
 
 `--step N/TOTAL` sets both numbers; TOTAL goes up to 64. Labels are optional and get cut short
 when there are many steps.
+
+In the compact Dynamic Island a steps card puts its ring in the leading slot and the step name,
+the count or an ETA in the trailing one. The trailing slot can carry your own text or icon
+instead, which needs the iOS app 1.19.1:
+
+```sh
+pushward activity update agent-deploy --compact-trailing-label PROD
+```
+
+`--compact-trailing-label` takes up to 4 characters and wins over `--compact-trailing-icon` in
+the Dynamic Island when both are set; the Mac notch draws the icon either way. Both work on every
+template and replace whatever it puts there, a timer's clock included; an icon name the app
+cannot draw is ignored and the template's own value stays, as it does on older app builds.
+`--compact-label` can take the ring's place the same way; set both and the island shows no
+progress at all.
 
 ## timer: a clock the server runs
 
