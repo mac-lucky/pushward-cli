@@ -95,6 +95,21 @@ components:
             - Dishwasher
           maxLength: 256
           type: string
+        owner_id:
+          description: User ID of the owner. Present only for shared activities.
+          readOnly: true
+          type: string
+        owner_kind:
+          description: Whether the owner is a person or an organization. Present only for shared activities.
+          enum:
+            - person
+            - org
+          readOnly: true
+          type: string
+        owner_nickname:
+          description: Owner's nickname. Present only for shared activities.
+          readOnly: true
+          type: string
         priority:
           examples:
             - 0
@@ -102,6 +117,15 @@ components:
           maximum: 10
           minimum: 0
           type: integer
+        share_count:
+          description: Number of active shares. Present only for owned activities with shares.
+          format: int64
+          readOnly: true
+          type: integer
+        share_role:
+          description: Caller's role on a shared activity (viewer or editor). Present only for shared activities.
+          readOnly: true
+          type: string
         slug:
           examples:
             - dishwasher
@@ -279,8 +303,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -493,8 +518,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -667,8 +693,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -856,8 +883,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -1097,8 +1125,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -1294,8 +1323,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -1505,8 +1535,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -1698,8 +1729,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -2334,8 +2366,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -2576,8 +2609,9 @@ components:
           maxLength: 4
           type: string
         compact_trailing_icon:
-          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff). Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side and the 128-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
           maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
           type: string
         compact_trailing_label:
           description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
@@ -3119,6 +3153,28 @@ components:
         - name
         - content
       type: object
+    CreateWidgetTokenOutputBody:
+      additionalProperties: false
+      properties:
+        expires_at:
+          description: Token expiry timestamp. The iOS app should call /auth/widget-token again before this elapses.
+          format: date-time
+          type: string
+        scopes:
+          description: Granted scopes. Currently always [widget:read, widget:register-token].
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        token:
+          description: hlw_-prefixed scoped widget token. Show to the user once and persist in the App Group keychain.
+          type: string
+      required:
+        - token
+        - expires_at
+        - scopes
+      type: object
     DeviceSortKey:
       additionalProperties: false
       properties:
@@ -3642,6 +3698,14 @@ components:
           additionalProperties:
             type: string
           type: object
+        org_id:
+          description: The organization that sent this notification, on a member's copy.
+          readOnly: true
+          type: string
+        org_name:
+          description: That organization's name, while it exists.
+          readOnly: true
+          type: string
         pushed:
           description: Whether the notification was pushed to at least one device.
           readOnly: true
@@ -3992,6 +4056,11 @@ components:
             - /requests/9f86d081884c7d65
           format: uri
           type: string
+        remediation:
+          description: "Set on 403 auth.integrity_failed only (the Android app's Play Integrity checks): the Play remediation dialog the app may show before it retries with a fresh integrity token. get_integrity is IntegrityDialogTypeCode.GET_INTEGRITY (the app is not Play's, or the device lacks device integrity). Absent when no dialog can help; clients ignore a value they do not know."
+          examples:
+            - get_integrity
+          type: string
         retry_after_ms:
           description: Suggested retry delay in milliseconds. Set on 409 demo and checkout conflicts, 429 rate limits, and 503 service-unavailable responses; mirrors the Retry-After header but with sub-second precision.
           examples:
@@ -4045,6 +4114,27 @@ components:
       required:
         - cron
         - timezone
+      type: object
+    RegisterWidgetPushTokenInputBody:
+      additionalProperties: false
+      properties:
+        platform:
+          description: Platform of the widget extension. Picks the APNs topic; defaults to 'ios' when omitted.
+          enum:
+            - ios
+            - watchos
+          type: string
+        push_token:
+          description: APNs token returned to WidgetPushHandler.pushTokenDidChange.
+          maxLength: 200
+          minLength: 1
+          type: string
+        widget_kind:
+          description: WidgetKit kind. Defaults to 'pushward-widget' when omitted.
+          maxLength: 64
+          type: string
+      required:
+        - push_token
       type: object
     SchedulePeriod:
       additionalProperties: false
@@ -4529,6 +4619,23 @@ components:
           format: int64
           readOnly: true
           type: integer
+        entitlement_org_name:
+          description: The organization providing the paid tier, when entitlement_source is organization.
+          readOnly: true
+          type: string
+        entitlement_source:
+          description: Where the paid tier comes from. Omitted when there is none.
+          enum:
+            - app_store
+            - google_play
+            - developer
+            - organization
+          readOnly: true
+          type: string
+        expires_at:
+          format: date-time
+          readOnly: true
+          type: string
         id:
           description: Server-assigned user ID.
           readOnly: true
@@ -4537,6 +4644,9 @@ components:
           $ref: "#/components/schemas/CallerIntegrationKey"
           description: The integration key that made this request. Only present for integration keys.
           readOnly: true
+        intro_offer_grant:
+          readOnly: true
+          type: boolean
         live_activity_updates_limit:
           format: int64
           readOnly: true
@@ -4545,6 +4655,12 @@ components:
           format: int64
           readOnly: true
           type: integer
+        needs_apns_reregister:
+          readOnly: true
+          type: boolean
+        needs_push_to_start_reregister:
+          readOnly: true
+          type: boolean
         nickname:
           description: Display name. Set via the iOS app - not writable from integration keys.
           readOnly: true
@@ -4564,6 +4680,40 @@ components:
           format: int64
           readOnly: true
           type: integer
+        play_auto_renew:
+          description: Whether the Play subscription renews; false once canceled.
+          readOnly: true
+          type: boolean
+        play_base_plan_id:
+          description: Base plan of the Play subscription (yearly); omitted for lifetime.
+          readOnly: true
+          type: string
+        play_expires_at:
+          description: End of the paid period, the grace end while in grace; omitted for lifetime.
+          format: date-time
+          readOnly: true
+          type: string
+        play_product_id:
+          description: "Play product: premium (yearly subscription) or lifetime."
+          readOnly: true
+          type: string
+        play_status:
+          description: State of the Google Play purchase; billing_retry is Play's account hold (no access).
+          enum:
+            - active
+            - expired
+            - revoked
+            - grace_period
+            - billing_retry
+          readOnly: true
+          type: string
+        play_test_purchase:
+          description: The Google Play purchase is a license tester's; omitted otherwise.
+          readOnly: true
+          type: boolean
+        product_id:
+          readOnly: true
+          type: string
         quota_period_month:
           description: YYYYMM bucket for the current monthly billing period (UTC).
           format: int64
@@ -4583,6 +4733,9 @@ components:
           description: "Whether the account has the paid tier: an active App Store subscription, or a seat in an organization that provides it. For an organization's key, whether the organization is active. Required for create/update activity calls."
           readOnly: true
           type: boolean
+        subscription_status:
+          readOnly: true
+          type: string
         widget_updates_limit:
           format: int64
           readOnly: true
@@ -4783,7 +4936,7 @@ components:
   securitySchemes:
     bearer:
       bearerFormat: token
-      description: Integration key (hlk_ prefix)
+      description: hla_ (full access user token), hlk_ (integration key), or hlw_ (scoped widget token used by the iOS WidgetKit extension)
       scheme: bearer
       type: http
 info:
@@ -4793,47 +4946,75 @@ info:
 
     ## Authentication
 
-    All endpoints (except `/health`) require an integration key in the `Authorization` header:
+    All endpoints (except `/health`) require an API token in the `Authorization` header:
 
     ```
-    Authorization: Bearer hlk_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345
+    Authorization: Bearer hla_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345
     ```
 
-    Integration keys are created in the PushWard iOS app. Each key has a `permissions` object with one level per resource; a higher level includes the lower ones:
+    Tokens follow the format `hla_<base62>` (~36 characters). Only the SHA-256 hash is stored server-side.
 
-    | Resource | Levels | Endpoints |
-    |---|---|---|
-    | `activities` | `none`, `read`, `update`, `manage` | read: `GET /activities`, `GET /activities/{slug}`; update: also `PATCH /activities/{slug}`; manage: also `POST /activities`, `DELETE /activities/{slug}` and `PATCH ?upsert=true` |
-    | `notifications` | `none`, `send`, `schedule` | send: `POST /notifications`, `GET /notifications/answers/{id}`, the `/notifications/receipts` endpoints; schedule: also the `/notifications/scheduled` endpoints |
-    | `widgets` | `none`, `read`, `write` | read: `GET /widgets`, `GET /widgets/{slug}`; write: also `POST /widgets`, `PATCH /widgets/{slug}`, `DELETE /widgets/{slug}` |
-    | `emails` | `none`, `send` | send: `POST /emails` (verified, opted-in recipients only) |
+    Three token prefixes exist:
 
-    `GET /auth/me` works with every key and reports the calling key's permissions under `integration_key`. A key can also be restricted to activity slugs (`activity_slugs`) and widget slugs (`widget_slugs`), exact or with a trailing `*`, and can have an `expires_at`, after which it answers `401 integration_key.expired`. Requests outside the key's permissions receive `403 integration_key.permission_denied`, with a `detail` naming the level they need.
+    - **`hla_`** - full-access user tokens issued by Sign in with Apple. One per user.
+    - **`hlk_`** - integration keys with a `permissions` object (one level per resource, below), optional activity and widget slug restrictions (exact or trailing-wildcard patterns) and an optional `expires_at`.
+    - **`hlw_`** - scoped widget tokens minted by the iOS app via `POST /auth/tokens/widget`. Stored in the App Group keychain and used by the WidgetKit extension to call `GET /widgets/{slug}` and `POST /devices/{device_id}/widget-token` without sharing the user's `hla_` token across processes.
 
-    Older fields stay on every key for existing clients: `scope` is `activity:<level>`, and the booleans `notifications` (send or schedule), `widgets` (write) and `emails` (send) summarize the levels. Create and update accept either `permissions` or those older fields (where `true` means the resource's highest level), not both.
+    `hlk_` permission levels (a higher level includes the lower ones):
 
-    **The account's default key** (`is_default: true`, created by the app) can also use the `/integrations/keys` endpoints to create, list, update, roll and revoke the account's other keys. It cannot give a key a permission above its own, and cannot change a default key. Keys it creates keep working when the default key is revoked or rolled.
+    - `activities`: `none`; `read`: `GET /activities`, `GET /activities/{slug}`; `update`: also `PATCH /activities/{slug}`; `manage`: also `POST /activities`, `DELETE /activities/{slug}`, `PATCH ?upsert=true`
+    - `notifications`: `none`; `send`: `POST /notifications`, `GET /notifications/answers/{id}`, `/notifications/receipts*`; `schedule`: also `/notifications/scheduled*`
+    - `widgets`: `none`; `read`: `GET /widgets`, `GET /widgets/{slug}`; `write`: also `POST /widgets`, `PATCH /widgets/{slug}`, `DELETE /widgets/{slug}`
+    - `emails`: `none`; `send`: `POST /emails`
+    - `GET /auth/me` works with every key and reports it under `integration_key`. An expired key gets `401 integration_key.expired`; a request above the key's levels gets `403 integration_key.permission_denied`.
+    - the account's default key (`is_default: true`): `POST /integrations/keys`, `GET /integrations/keys`, `PATCH /integrations/keys/{key_id}`, `DELETE /integrations/keys/{key_id}`, `POST /integrations/keys/{key_id}/roll` for the account's other keys, never granting more than it holds and never touching a default key. Keys it creates are independent: revoking or rolling the default key leaves them working.
 
-    ## Errors
+    The legacy key fields stay for released clients: `scope` is `activity:<level>`, and `notifications` (send or schedule), `widgets` (write) and `emails` (send) are booleans derived from the levels. Create and update take either `permissions` or the legacy fields (legacy `true` = the resource's top level), never both (`400 integration_key.permissions_conflict`).
 
-    Errors are RFC 9457 problem details (`application/problem+json`). The `code` member is a stable programmatic identifier -- match on it instead of `detail`. Rate-limit and quota responses (`429`) also set a `Retry-After` header and `retry_after_ms`, as does `503 service.unavailable` -- a `503` means the request itself was fine and the server could not reach a dependency, so retry it rather than treating it as a failed delivery.
+    All other endpoints require a full-access `hla_` token and return `403` if called with an integration key.
+
+    ## Subscription
+
+    Some endpoints require an active App Store subscription. Requests without a valid subscription receive a `403` with `"active subscription required"`.
+
+    **Subscription required:**
+    - `POST /activities` (create activity)
+    - `PATCH /activities/{slug}` (update activity - including arming/clearing the alarm via `content.alarm`)
+    - `POST /notifications` (create notification)
+    - `POST /activities/{slug}/permissions`, `POST /permissions/patterns`, `PATCH /permissions/{id}` (granting/managing activity sharing)
+    - `POST /permissions/redeem` - only for editor-role and pattern codes; viewer-role activity codes are redeemable without a subscription, subject to the owner's free-recipient limit
+
+    **No subscription required:**
+    - `GET /activities`, `GET /activities/{slug}`, `DELETE /activities/{slug}`
+    - All device subscription routes (`/devices/{device_id}/subscriptions/*`) and push-update-token registration - owner plumbing, free-tier callers may register tokens so their own Live Activities update
+    - `GET /notifications`, `PATCH /notifications`, `PATCH /notifications/{id}`, `DELETE /notifications`, `DELETE /notifications/{id}`
+    - `POST /integrations/keys` (create), `POST /integrations/keys/{key_id}/roll` (roll), `GET /integrations/keys`, `DELETE /integrations/keys/{key_id}`, `PATCH /integrations/keys/{key_id}`
+    - Auth, health, device registration, and subscription management endpoints
 
     ## Activity State Machine
 
-    Activities follow a state machine with two client-visible states:
+    Activities follow a state machine with three states:
 
     | State | Description |
     |---|---|
-    | `ENDED` | Inactive (default on creation) |
-    | `ONGOING` | Active Live Activity running on device |
+    | `ended` | Inactive (default on creation) |
+    | `ongoing` | Active Live Activity running on device |
+    | `preempted` | Server-evicted due to priority limits |
 
     **Transitions via `PATCH /activities/{slug}`:**
 
     | From -> To | Push Action |
     |---|---|
-    | ENDED -> ONGOING | Push-to-start (starts Live Activity) |
-    | ONGOING -> ONGOING | Push update (updates content) |
-    | ONGOING -> ENDED | Push end (dismisses after 4 hours) |
+    | ended -> ongoing | Push-to-start (starts Live Activity) |
+    | ongoing -> ongoing | Push update (updates content) |
+    | ongoing -> ended | Push end (card stays on the Lock Screen for `dismissal_ttl` seconds; without it, `ended_ttl` capped at 4 hours) |
+    | preempted -> ongoing | Push-to-start (restarts activity) |
+
+    `preempted` is server-internal and cannot be set via the API.
+
+    ## Priority & Eviction
+
+    When the ongoing activity limit (default 5) is exceeded, the server evicts the lowest-priority, oldest activity. Evicted activities transition to `preempted` and can be restarted.
 
     ## Countdown Lifecycle
 
@@ -4855,6 +5036,16 @@ info:
     - **Named colors:** `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`, `indigo`, `teal`, `cyan`, `mint`, `brown`
     - **Hex RGB:** `#FF5733` or `FF5733`
     - **Hex RGBA:** `#FF573380` or `FF573380`
+
+    ## Timestamps and Durations
+
+    Three distinct time regimes coexist in the API; pick the right decoder per field:
+
+    | Regime | Wire format | Example fields |
+    |---|---|---|
+    | Management timestamps | RFC 3339 strings (`2026-05-18T14:23:00Z`) | `created_at`, `updated_at`, `expires_at`, `delete_at` |
+    | Content timestamps | Unix epoch seconds (integer) | `end_date`, `start_date`, `fired_at`, `snoozed_until` |
+    | Durations | Integer seconds | `ended_ttl`, `stale_ttl`, `dismissal_ttl`, `warning_threshold` |
   license:
     name: MIT
     url: https://github.com/mac-lucky/pushward-integrations/blob/main/LICENSE
@@ -5889,6 +6080,345 @@ paths:
       summary: Get current user profile
       tags:
         - Auth
+  /auth/tokens/widget:
+    post:
+      description: Mints a fresh hlw_-prefixed token scoped to widget:read + widget:register-token. The iOS app calls this once after sign-in (and after JWT rotation) and writes the result into the App Group keychain. The token is bound to the device of the calling session; only that device's prior widget token is revoked, and once the user holds more than 10 live widget tokens the least recently used are revoked too.
+      operationId: createWidgetToken
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWidgetTokenOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                integration_key.permission_denied:
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires full account access (the app's sign-in token)"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+      security:
+        - bearer: []
+      summary: Issue scoped widget token
+      tags:
+        - Auth
+  /devices/{device_id}/widget-token:
+    delete:
+      description: Removes the device's widget push token when the user deletes their last widget, so the defunct token stops fanning out immediately. Idempotent. Authenticate with hla_ (iOS app) or the scoped hlw_ token from the App Group keychain.
+      operationId: unregisterWidgetPushToken
+      parameters:
+        - description: Stable device identifier whose widget push token should be unregistered.
+          in: path
+          name: device_id
+          required: true
+          schema:
+            description: Stable device identifier whose widget push token should be unregistered.
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/problem+json:
+              examples:
+                bad_request:
+                  value:
+                    detail: validation failed
+                    errors:
+                      - location: body
+                        message: invalid character '}' looking for beginning of value
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                requires_a_widget_token:
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires a widget token"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                unprocessable_entity:
+                  value:
+                    detail: validation failed
+                    errors:
+                      - location: body.slug
+                        message: expected length >= 1
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+      security:
+        - bearer: []
+      summary: Unregister widget extension push token
+      tags:
+        - Devices
+    post:
+      description: Registers the APNs token surfaced by iOS' WidgetPushHandler.pushTokenDidChange. Authenticate with hla_ (iOS app) or the scoped hlw_ token from the App Group keychain (extension process).
+      operationId: registerWidgetPushToken
+      parameters:
+        - description: Stable device identifier the main app uses for activity push tokens.
+          in: path
+          name: device_id
+          required: true
+          schema:
+            description: Stable device identifier the main app uses for activity push tokens.
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterWidgetPushTokenInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/problem+json:
+              examples:
+                bad_request:
+                  value:
+                    detail: validation failed
+                    errors:
+                      - location: body
+                        message: invalid character '}' looking for beginning of value
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                requires_a_widget_token:
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires a widget token"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                unprocessable_entity:
+                  value:
+                    detail: validation failed
+                    errors:
+                      - location: body.slug
+                        message: expected length >= 1
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+      security:
+        - bearer: []
+      summary: Register widget extension push token
+      tags:
+        - Devices
   /emails:
     post:
       description: Sends a transactional email to a verified, non-unsubscribed recipient of the calling account. Rejects unverified recipients (403) and silently skips suppressed addresses. Requires an integration key with the emails level send.
@@ -9187,11 +9717,21 @@ tags:
     name: Auth
   - description: Create, list, and manage trackable activities
     name: Activities
+  - description: Register iOS devices for push notifications
+    name: Devices
+  - description: App Store subscription, purchase, and billing lifecycle
+    name: Billing
   - description: Scoped keys for external services (Home Assistant, IoT, CI/CD)
     name: Integration Keys
+  - description: Share activities with other users via invite codes, direct grants, or slug patterns
+    name: Permissions
   - description: In-app notification inbox with optional APNs push delivery
     name: Notifications
   - description: Transactional email channel (verified-recipient relay via AWS SES)
     name: Email
+  - description: Interactive demo that walks through the Live Activity templates
+    name: Demo
+  - description: App Store subscription webhook handling
+    name: Webhooks
   - description: Server-driven iOS WidgetKit widgets (iOS 26+)
     name: Widgets

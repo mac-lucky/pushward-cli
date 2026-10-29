@@ -15,6 +15,15 @@ import (
 	"github.com/mac-lucky/pushward-cli/internal/api"
 )
 
+// appOnlyOperations are published for the iOS app and its widget extension,
+// which authenticate with a session or a scoped widget token. A CLI user has
+// neither, so they get no command.
+var appOnlyOperations = map[string]bool{
+	"createWidgetToken":         true,
+	"registerWidgetPushToken":   true,
+	"unregisterWidgetPushToken": true,
+}
+
 // TestSpecParity holds the operation table and the command tree to the
 // OpenAPI spec: every operation the server publishes needs a command, and
 // the table must not drift from the spec's methods and paths. Refresh the
@@ -36,7 +45,7 @@ func TestSpecParity(t *testing.T) {
 	var fromSpec []string
 	for path, methods := range spec.Paths {
 		for method, op := range methods {
-			if op.OperationID == "" {
+			if op.OperationID == "" || appOnlyOperations[op.OperationID] {
 				continue
 			}
 			fromSpec = append(fromSpec, fmt.Sprintf("%s %s %s public=%v", op.OperationID, strings.ToUpper(method), path, op.Security == nil))
