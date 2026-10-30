@@ -56,6 +56,16 @@ components:
           format: date-time
           readOnly: true
           type: string
+        devices_started:
+          description: "How many of devices_targeted have started this run of the Live Activity, as reported back by the device. One that has not may still be starting it, may have the app force-quit, or may have dropped the start: iOS drops a push-to-start silently, with no error to the server, when a phone is over its push-to-start limit. Present only while the activity is ONGOING, on activities the caller owns (not on an organization's)."
+          format: int64
+          readOnly: true
+          type: integer
+        devices_targeted:
+          description: "The owner's Apple devices this run of the Live Activity is meant to reach: those subscribed to it that hold a push-to-start token. Devices of users it is shared with, and Android devices, are not counted. Present only while the activity is ONGOING, on activities the caller owns (not on an organization's)."
+          format: int64
+          readOnly: true
+          type: integer
         dismissal_ttl:
           description: Seconds after ENDED before the Live Activity is removed from the iOS Lock Screen. 0 removes it immediately, up to 14400 (4h, the iOS maximum). When unset, removal follows ended_ttl (capped at 4h). Applies to client ends and server auto-ends (stale_ttl, countdown expiry); evicted (preempted) activities always keep the default lingering window.
           examples:
