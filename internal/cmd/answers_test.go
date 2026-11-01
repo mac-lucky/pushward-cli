@@ -26,6 +26,41 @@ func TestNotificationRetract(t *testing.T) {
 	if strings.TrimSpace(r.stdout) != `{"devices":3}` {
 		t.Errorf("piped output should be the raw response, got %q", r.stdout)
 	}
+
+	for body, want := range map[string]string{
+		`{"devices":3}`: "retracted garage-door on 3 devices\n",
+		`{"devices":1}`: "retracted garage-door on 1 device\n",
+		`{"devices":0}`: "retracted garage-door on 0 devices\n",
+	} {
+		f.reply("POST /notifications/retract", 202, body)
+		r := runWith(t, srv, func(a *App) { a.StdoutTTY = true }, "notification", "retract", "garage-door")
+		if r.code != 0 || r.stdout != want {
+			t.Errorf("%s on a terminal: exit %d out %q, want %q", body, r.code, r.stdout, want)
+		}
+	}
+}
+
+// Past 10 a minute the server answers 429, which the client retries before
+// giving up with exit 5; a key without notification rights gets 403, exit 3.
+func TestNotificationRetractRefused(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("POST /notifications/retract", 429, `{"status":429,"code":"rate_limit.exceeded","detail":"retract is limited to 10 a minute","retry_after_ms":6000}`)
+	r := runCLI(t, srv, nil, "", "notification", "retract", "garage-door")
+	if r.code != ExitRateLimited || len(f.calls) != 5 || !strings.Contains(r.stderr, "10 a minute") {
+		t.Errorf("429: exit %d after %d calls, stderr %q", r.code, len(f.calls), r.stderr)
+	}
+	for _, d := range r.sleeps {
+		if d != 6*time.Second {
+			t.Errorf("retried after %s, not the server's retry_after_ms", d)
+		}
+	}
+
+	f.calls = nil
+	f.reply("POST /notifications/retract", 403, `{"status":403,"code":"key.permission_denied","detail":"this key cannot send notifications"}`)
+	r = runCLI(t, srv, nil, "", "notification", "retract", "garage-door")
+	if r.code != ExitAuth || len(f.calls) != 1 {
+		t.Errorf("403: exit %d after %d calls (%s)", r.code, len(f.calls), r.stderr)
+	}
 }
 
 func TestNotificationAnswersPage(t *testing.T) {
