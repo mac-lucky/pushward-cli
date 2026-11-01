@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -169,7 +170,10 @@ func parseSeconds(raw string) (int64, error) {
 		return n, nil
 	}
 	if m := dayDuration.FindStringSubmatch(raw); m != nil {
-		n, _ := strconv.ParseInt(m[1], 10, 64)
+		n, err := strconv.ParseInt(m[1], 10, 64)
+		if err != nil || n > math.MaxInt64/86400 {
+			return 0, fmt.Errorf("%q is too long", raw)
+		}
 		return n * 86400, nil
 	}
 	d, err := time.ParseDuration(raw)
@@ -180,7 +184,7 @@ func parseSeconds(raw string) (int64, error) {
 }
 
 // parseMinutes accepts whole minutes, as a plain number or as a duration
-// like 15m, 2h or 1d.
+// like 15m, 2h or 1d. A duration is not rounded: 1m0.4s is an error.
 func parseMinutes(raw string) (int64, error) {
 	if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		if n < 1 {
@@ -188,11 +192,19 @@ func parseMinutes(raw string) (int64, error) {
 		}
 		return n, nil
 	}
-	s, err := parseSeconds(raw)
-	if err != nil || s == 0 || s%60 != 0 {
-		return 0, fmt.Errorf("want whole minutes like 15, 15m, 2h or 1d; got %q", raw)
+	bad := fmt.Errorf("want whole minutes like 15, 15m, 2h or 1d; got %q", raw)
+	if dayDuration.MatchString(raw) {
+		s, err := parseSeconds(raw)
+		if err != nil || s == 0 {
+			return 0, bad
+		}
+		return s / 60, nil
 	}
-	return s / 60, nil
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < time.Minute || d%time.Minute != 0 {
+		return 0, bad
+	}
+	return int64(d / time.Minute), nil
 }
 
 // parseTime accepts RFC 3339, unix seconds, or a duration from now.

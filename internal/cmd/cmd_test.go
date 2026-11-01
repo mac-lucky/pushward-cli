@@ -232,11 +232,39 @@ func TestNotifySnooze(t *testing.T) {
 		{"notify", "--title", "a", "--body", "b", "--snooze", "0"},
 		{"notify", "--title", "a", "--body", "b", "--snooze", "15,"},
 		{"notify", "--title", "a", "--body", "b", "--snooze", "15", "--ack"},
+		// Any --ack-* flag asks for the acknowledgement too.
+		{"notify", "--title", "a", "--body", "b", "--snooze", "15", "--ack-repeat", "2m"},
+		{"schedule", "create", "--in", "2h", "--title", "a", "--body", "b", "--snooze", "15", "--ack"},
+		{"schedule", "create", "--in", "2h", "--title", "a", "--body", "b", "--snooze", "15", "--ack-expire", "30m"},
 	} {
 		n := len(f.calls)
 		if r := runCLI(t, srv, nil, "", argv...); r.code != ExitUsage || len(f.calls) != n {
 			t.Errorf("%v: exit %d after %d calls, want a usage error before sending", argv, r.code, len(f.calls)-n)
 		}
+	}
+}
+
+func TestParseMinutes(t *testing.T) {
+	for raw, want := range map[string]int64{
+		"15": 15, "15m": 15, "1h30m": 90, "2h": 120, "1d": 1440, "7d": 10080,
+		"1m0.4s": 0, "90s": 0, "30s": 0, "0": 0, "0m": 0, "0d": 0, "-5": 0, "-5m": 0, "": 0, "soon": 0,
+		// Too long for an int64 of minutes, or of seconds on the way there.
+		"106751991167301d":     0,
+		"99999999999999999999": 0,
+		"9999999999999999999d": 0,
+		"9999999999999h":       0,
+	} {
+		got, err := parseMinutes(raw)
+		switch {
+		case want == 0 && err == nil:
+			t.Errorf("%q: got %d, want an error", raw, got)
+		case want != 0 && (err != nil || got != want):
+			t.Errorf("%q: got %d %v, want %d", raw, got, err, want)
+		}
+	}
+	// The largest day count that fits still parses.
+	if got, err := parseMinutes("106751991167300d"); err != nil || got != 106751991167300*1440 {
+		t.Errorf("106751991167300d: %d %v", got, err)
 	}
 }
 
