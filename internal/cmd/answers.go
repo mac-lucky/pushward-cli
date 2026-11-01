@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -48,7 +50,7 @@ prints the cursor to resume from on stderr:
 		Args:        checkArgs,
 		Annotations: map[string]string{"operation": "listNotificationAnswers"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if limit < 0 || limit > 100 {
+			if cmd.Flags().Changed("limit") && (limit < 1 || limit > 100) {
 				return usagef("--limit takes 1 to 100")
 			}
 			q := url.Values{}
@@ -161,11 +163,14 @@ func (a *App) waitAnswers(ctx context.Context, after string, q url.Values, wait 
 
 // followAnswers reads the stream until interrupted. Each page with answers
 // is printed as it arrives: one compact JSON line when piped, so a reader
-// can take it line by line. The cursor to resume from goes to stderr when it
-// stops, for any reason.
+// can take it line by line. It waits out outages (see followRetries), and
+// when it stops the cursor to resume from goes to stderr, unless the cursor
+// the caller passed was refused before it read anything.
 func (a *App) followAnswers(ctx context.Context, cursor string, q url.Values) (err error) {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The server handed out the cursor, or a page came back for it.
+	confirmed := cursor == ""
 	if cursor == "" {
 		if cursor, err = a.answerCursor(ctx); err != nil {
 			if ctx.Err() != nil {
@@ -175,29 +180,37 @@ func (a *App) followAnswers(ctx context.Context, cursor string, q url.Values) (e
 		}
 	}
 	defer func() {
-		if !a.quiet {
+		var ae *api.Error
+		refused := !confirmed && errors.As(err, &ae) && ae.Status >= 400 && ae.Status < 500
+		if !a.quiet && !refused {
 			fmt.Fprintf(a.Stderr, "resume with --after %s\n", cursor)
 		}
 	}()
 	q.Set("wait", strconv.Itoa(int(maxServerWait/time.Second)))
+	failures := 0
 	for {
 		q.Set("after", cursor)
 		polled := a.Now()
 		resp, err := a.call(ctx, "listNotificationAnswers", nil, q, nil)
-		var ae *api.Error
 		switch {
 		case err == nil:
 		case ctx.Err() != nil:
 			return nil
-		case errors.As(err, &ae) && ae.Code == api.CodeAnswerWaitLimit:
-			// Every long-poll slot of the key is taken; back off.
-			if err := a.sleep(ctx, 5*time.Second); err != nil {
+		case followRetries(err):
+			delay := followBackoff(failures, err)
+			failures++
+			if !a.quiet {
+				a.out().Warnf("%v; retrying in %s", err, delay.Round(100*time.Millisecond))
+			}
+			if err := a.sleep(ctx, delay); err != nil {
 				return nil
 			}
 			continue
 		default:
 			return err
 		}
+		failures = 0
+		confirmed = true
 		p, err := decodeAnswerPage(resp.Body)
 		if err != nil {
 			return err
@@ -223,4 +236,39 @@ func (a *App) followAnswers(ctx context.Context, cursor string, q url.Values) (e
 			}
 		}
 	}
+}
+
+// followRetries reports whether follow waits out err: the network, the
+// server and a rate limit (the key's long-poll slots being taken included)
+// get better by waiting. Anything else ends it, a key or a cursor the server
+// refuses and a used-up quota among them.
+func followRetries(err error) bool {
+	var te *api.TransportError
+	var ae *api.Error
+	switch {
+	case errors.As(err, &te):
+		return true
+	case errors.As(err, &ae):
+		return ae.Status >= 500 || (ae.Status == http.StatusTooManyRequests && ae.Code != api.CodeQuotaExceeded)
+	}
+	return false
+}
+
+const (
+	followRetryMin = 2 * time.Second
+	followRetryMax = 30 * time.Second
+)
+
+// followBackoff is the wait after the n-th failure in a row, counting from
+// 0: 2s doubling to 30s, up to a quarter less for jitter, so readers that
+// lost the server together do not come back together. A longer
+// retry_after_ms from the server wins, up to the same 30s.
+func followBackoff(n int, err error) time.Duration {
+	base := min(followRetryMin<<min(n, 5), followRetryMax)
+	d := base - rand.N(base/4) // #nosec G404 -- retry jitter, not security-sensitive
+	var ae *api.Error
+	if errors.As(err, &ae) && ae.RetryAfterMs > 0 {
+		d = max(d, min(time.Duration(ae.RetryAfterMs)*time.Millisecond, followRetryMax))
+	}
+	return d
 }

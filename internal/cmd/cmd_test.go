@@ -81,6 +81,18 @@ var testNow = time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
 
 func runCLI(t *testing.T, srv *httptest.Server, env map[string]string, stdin string, argv ...string) result {
 	t.Helper()
+	return runApp(t, srv, env, stdin, nil, argv...)
+}
+
+// runWith is runCLI with the App changed by adjust before it runs: a
+// terminal on stdout, a context the test cancels, another transport.
+func runWith(t *testing.T, srv *httptest.Server, adjust func(*App), argv ...string) result {
+	t.Helper()
+	return runApp(t, srv, nil, "", adjust, argv...)
+}
+
+func runApp(t *testing.T, srv *httptest.Server, env map[string]string, stdin string, adjust func(*App), argv ...string) result {
+	t.Helper()
 	var out, errb bytes.Buffer
 	clk := &clock{t: testNow}
 	var sleeps []time.Duration
@@ -100,6 +112,9 @@ func runCLI(t *testing.T, srv *httptest.Server, env map[string]string, stdin str
 			}
 			return os.Getenv(k)
 		},
+	}
+	if adjust != nil {
+		adjust(a)
 	}
 	code := Execute(a, argv)
 	return result{out.String(), errb.String(), code, a, sleeps}

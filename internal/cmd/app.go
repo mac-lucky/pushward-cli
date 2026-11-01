@@ -54,6 +54,10 @@ type App struct {
 	StdoutTTY bool
 	StdinTTY  bool
 
+	// Context is the context commands run under; nil means
+	// context.Background.
+	Context context.Context
+
 	HTTP   *http.Client
 	Now    func() time.Time
 	Sleep  func(context.Context, time.Duration) error
@@ -104,7 +108,11 @@ func NewApp(version, commit, date string) *App {
 func Execute(app *App, args []string) int {
 	root := NewRoot(app)
 	root.SetArgs(args)
-	err := root.Execute()
+	ctx := app.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return ExitOK
 	}

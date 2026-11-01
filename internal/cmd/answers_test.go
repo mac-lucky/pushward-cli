@@ -2,9 +2,15 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/mac-lucky/pushward-cli/internal/api"
 )
 
 func TestNotificationRetract(t *testing.T) {
@@ -41,8 +47,13 @@ func TestNotificationAnswersPage(t *testing.T) {
 	if strings.Join(queries, " | ") != " | after=57&limit=10" {
 		t.Errorf("queries %q", queries)
 	}
-	if r := runCLI(t, srv, nil, "", "notification", "answers", "--limit", "101"); r.code != ExitUsage {
-		t.Errorf("--limit 101: exit %d", r.code)
+	for _, limit := range []string{"0", "-1", "101"} {
+		if r := runCLI(t, srv, nil, "", "notification", "answers", "--limit", limit); r.code != ExitUsage {
+			t.Errorf("--limit %s: exit %d", limit, r.code)
+		}
+	}
+	if len(queries) != 2 {
+		t.Errorf("a bad --limit was sent: %q", queries)
 	}
 }
 
@@ -111,14 +122,239 @@ func TestNotificationAnswersFollow(t *testing.T) {
 	if strings.Join(queries, " | ") != strings.Join(want, " | ") {
 		t.Errorf("queries\n got  %q\n want %q", queries, want)
 	}
-	// The full wait slots back off 5s, the empty page that came back at
-	// once 2s.
-	if len(r.sleeps) != 2 || r.sleeps[0] != 5*time.Second || r.sleeps[1] != 2*time.Second {
+	// The full wait slots back off the first step of the retry backoff, the
+	// empty page that came back at once 2s.
+	if len(r.sleeps) != 2 || r.sleeps[0] <= 1500*time.Millisecond || r.sleeps[0] > 2*time.Second || r.sleeps[1] != 2*time.Second {
 		t.Errorf("sleeps %v", r.sleeps)
 	}
 
 	if r := runCLI(t, srv, nil, "", "notification", "answers", "--follow", "--wait", "1m"); r.code != ExitUsage {
 		t.Errorf("--follow with --wait: exit %d", r.code)
+	}
+}
+
+// answerFeed answers GET /notifications/answers with replies[n-1] on the
+// n-th request, and with the last reply after that. It returns the number
+// of requests so far.
+func answerFeed(f *fakeAPI, replies ...func() (int, string)) func() int {
+	var mu sync.Mutex
+	n := 0
+	f.routes["GET /notifications/answers"] = func(call) (int, string) {
+		mu.Lock()
+		n++
+		i := min(n, len(replies)) - 1
+		mu.Unlock()
+		return replies[i]()
+	}
+	return func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return n
+	}
+}
+
+func times(k, status int, body string) []func() (int, string) {
+	out := make([]func() (int, string), k)
+	for i := range out {
+		out[i] = func() (int, string) { return status, body }
+	}
+	return out
+}
+
+func page(body string) func() (int, string) {
+	return func() (int, string) { return 200, body }
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+const (
+	waitLimited = `{"status":429,"code":"answer_wait.limit_exceeded","detail":"too many concurrent waits; retry shortly"}`
+	rateLimited = `{"status":429,"code":"rate_limit.exceeded","detail":"slow down"}`
+	quotaUsedUp = `{"status":429,"code":"quota.exceeded","detail":"monthly quota used up"}`
+	tokenBad    = `{"status":401,"code":"token.invalid","detail":"invalid token"}`
+)
+
+// retryWaits reads the waits --follow announced on stderr.
+func retryWaits(t *testing.T, stderr string) []time.Duration {
+	t.Helper()
+	var waits []time.Duration
+	for line := range strings.SplitSeq(stderr, "\n") {
+		_, d, ok := strings.Cut(line, "; retrying in ")
+		if !ok {
+			continue
+		}
+		w, err := time.ParseDuration(d)
+		if err != nil {
+			t.Fatalf("retry line %q: %v", line, err)
+		}
+		waits = append(waits, w)
+	}
+	return waits
+}
+
+// --follow waits out a dropped connection, a 502 and rate limits, backing
+// off from 2s to 30s, starts over once a page comes back, and stops on a
+// used-up quota.
+func TestNotificationAnswersFollowRetries(t *testing.T) {
+	f, srv := newFake(t)
+	replies := []func() (int, string){page(`{"items":[],"cursor":"57"}`)}
+	// The client tries a GET five times before follow sees the error.
+	replies = append(replies, times(5, 502, "bad gateway")...)
+	replies = append(replies, times(5, 429, rateLimited)...)
+	replies = append(replies, times(4, 429, waitLimited)...)
+	replies = append(replies, page(`{"items":[{"notification_id":9,"action_id":"go"}],"cursor":"58"}`))
+	replies = append(replies, times(1, 429, waitLimited)...)
+	replies = append(replies, times(1, 429, quotaUsedUp)...)
+	calls := answerFeed(f, replies...)
+
+	var mu sync.Mutex
+	dropped := 0
+	r := runWith(t, srv, func(a *App) {
+		next := srv.Client().Transport
+		a.HTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			mu.Lock()
+			drop := req.URL.Query().Has("wait") && dropped < 5
+			if drop {
+				dropped++
+			}
+			mu.Unlock()
+			if drop {
+				return nil, errors.New("connection reset by peer")
+			}
+			return next.RoundTrip(req)
+		})}
+	}, "notification", "answers", "--follow")
+
+	if r.code != ExitRateLimited {
+		t.Fatalf("exit %d, want %d on a used-up quota (%s)", r.code, ExitRateLimited, r.stderr)
+	}
+	if want := `{"items":[{"notification_id":9,"action_id":"go"}],"cursor":"58"}` + "\n"; r.stdout != want {
+		t.Errorf("stdout %q, want %q", r.stdout, want)
+	}
+	if n := calls(); n != len(replies) {
+		t.Errorf("%d requests reached the server, want %d", n, len(replies))
+	}
+	for _, s := range []string{"connection reset by peer", ": 502", "rate_limit.exceeded", "quota.exceeded", "resume with --after 58"} {
+		if !strings.Contains(r.stderr, s) {
+			t.Errorf("stderr should mention %q:\n%s", s, r.stderr)
+		}
+	}
+	steps := []time.Duration{2, 4, 8, 16, 30, 30, 30, 2}
+	waits := retryWaits(t, r.stderr)
+	if len(waits) != len(steps) {
+		t.Fatalf("retried %d times, want %d:\n%s", len(waits), len(steps), r.stderr)
+	}
+	for i, w := range waits {
+		top := steps[i] * time.Second
+		if w < top*3/4 || w > top {
+			t.Errorf("retry %d waited %s, want up to a quarter under %s", i, w, top)
+		}
+	}
+
+	// -q keeps the retries and the resume hint off stderr.
+	replies = append([]func() (int, string){page(`{"items":[],"cursor":"57"}`)}, times(5, 502, "bad gateway")...)
+	answerFeed(f, append(replies, times(1, 401, tokenBad)...)...)
+	r = runCLI(t, srv, nil, "", "notification", "answers", "--follow", "-q")
+	if r.code != ExitAuth || strings.Contains(r.stderr, "retrying") || strings.Contains(r.stderr, "resume") {
+		t.Errorf("-q: exit %d stderr %q", r.code, r.stderr)
+	}
+}
+
+func TestFollowBackoff(t *testing.T) {
+	for n, top := range []time.Duration{2, 4, 8, 16, 30, 30, 30} {
+		top *= time.Second
+		for range 50 {
+			if d := followBackoff(n, errors.New("reset")); d <= top*3/4 || d > top {
+				t.Fatalf("failure %d: waited %s, want up to a quarter under %s", n, d, top)
+			}
+		}
+	}
+	if d := followBackoff(1000, nil); d > followRetryMax {
+		t.Errorf("a long outage waits %s", d)
+	}
+	// The server asking for longer wins, up to the cap.
+	slow := &api.Error{Status: 429, Code: api.CodeAnswerWaitLimit, RetryAfterMs: 10_000}
+	if d := followBackoff(0, slow); d != 10*time.Second {
+		t.Errorf("retry_after_ms 10000: waited %s", d)
+	}
+	slow.RetryAfterMs = 600_000
+	if d := followBackoff(0, slow); d != followRetryMax {
+		t.Errorf("retry_after_ms 600000: waited %s", d)
+	}
+}
+
+// An interrupt ends --follow with exit 0 and the cursor of the last page.
+func TestNotificationAnswersFollowInterrupted(t *testing.T) {
+	f, srv := newFake(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	answerFeed(f,
+		page(`{"items":[{"notification_id":9,"action_id":"go"}],"cursor":"58"}`),
+		func() (int, string) {
+			cancel()
+			return 200, `{"items":[],"cursor":"58"}`
+		},
+	)
+	r := runWith(t, srv, func(a *App) { a.Context = ctx }, "notification", "answers", "--follow", "--after", "57")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	if r.stdout != `{"items":[{"notification_id":9,"action_id":"go"}],"cursor":"58"}`+"\n" {
+		t.Errorf("stdout %q", r.stdout)
+	}
+	if strings.TrimSpace(r.stderr) != "resume with --after 58" {
+		t.Errorf("stderr %q", r.stderr)
+	}
+}
+
+// On a terminal --follow prints one line per answer and no cursor lines.
+func TestNotificationAnswersFollowTTY(t *testing.T) {
+	f, srv := newFake(t)
+	answerFeed(f,
+		page(`{"items":[{"notification_id":9,"action_id":"go"},{"notification_id":10,"action_id":"reply","text":"after lunch","collapse_id":"deploy"}],"cursor":"58"}`),
+		func() (int, string) { return 401, tokenBad },
+	)
+	r := runWith(t, srv, func(a *App) { a.StdoutTTY = true }, "notification", "answers", "--follow", "--after", "57")
+	if r.code != ExitAuth {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	if want := "notification 9: go\nnotification 10: reply (\"after lunch\"), collapse id deploy\n"; r.stdout != want {
+		t.Errorf("stdout %q, want %q", r.stdout, want)
+	}
+	if !strings.Contains(r.stderr, "resume with --after 58") {
+		t.Errorf("stderr %q", r.stderr)
+	}
+}
+
+// No resume hint without a cursor to resume from: the first read failed, or
+// the server refused the cursor the caller passed before any page came back
+// for it.
+func TestNotificationAnswersFollowNoHint(t *testing.T) {
+	f, srv := newFake(t)
+	answerFeed(f, func() (int, string) { return 401, tokenBad })
+	r := runCLI(t, srv, nil, "", "notification", "answers", "--follow")
+	if r.code != ExitAuth || strings.Contains(r.stderr, "resume") {
+		t.Errorf("first read refused: exit %d stderr %q", r.code, r.stderr)
+	}
+
+	calls := answerFeed(f, func() (int, string) {
+		return 400, `{"status":400,"code":"cursor.invalid","detail":"after is not a cursor of this stream"}`
+	})
+	r = runCLI(t, srv, nil, "", "notification", "answers", "--follow", "--after", "abc")
+	if r.code != ExitError || calls() != 1 || strings.Contains(r.stderr, "resume") || !strings.Contains(r.stderr, "cursor.invalid") {
+		t.Errorf("cursor refused: exit %d after %d calls, stderr %q", r.code, calls(), r.stderr)
+	}
+
+	// A cursor the server handed out is worth printing.
+	answerFeed(f,
+		page(`{"items":[],"cursor":"57"}`),
+		func() (int, string) { return 404, `{"status":404,"code":"not_found","detail":"gone"}` },
+	)
+	r = runCLI(t, srv, nil, "", "notification", "answers", "--follow")
+	if r.code != ExitNotFound || !strings.Contains(r.stderr, "resume with --after 57") {
+		t.Errorf("404 after a cursor: exit %d stderr %q", r.code, r.stderr)
 	}
 }
 
