@@ -224,11 +224,13 @@ func newNotificationCmd(a *App) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "notification",
 		Aliases: []string{"notifications"},
-		Short:   "Send notifications and read their answers",
+		Short:   "Send notifications, read their answers and take them back",
 	}
 	c.AddCommand(
 		notifyCommand(a, "send", "Send a push notification (same as pushward notify)"),
 		newAnswerCmd(a),
+		newAnswersCmd(a),
+		newRetractCmd(a),
 	)
 	return group(c)
 }
@@ -251,11 +253,38 @@ answer arrives and exits 7 if none does in time.`,
 	return c
 }
 
+func newRetractCmd(a *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "retract <collapse-id>",
+		Short: "Take back the notifications sent with a collapse id",
+		Long: `Remove the notifications sent with --collapse-id <collapse-id> from the
+devices, once what they said is no longer true. Any of them sent with --ack
+stop repeating, their receipts canceled as retracted. It prints how many
+devices the retraction was sent to.
+
+  pushward notify --title "Garage door open" --body "Since 21:40" --collapse-id garage-door
+  pushward notification retract garage-door
+
+Best effort: an app that was force-quit keeps the notification on screen
+until it runs again, and Apple devices need PushWard 1.20 or later. An
+account can retract 10 times a minute.`,
+		Args:        checkArgs,
+		Annotations: map[string]string{"operation": "retractNotifications"},
+		RunE: func(cmd *cobra.Command, argv []string) error {
+			resp, err := a.call(cmd.Context(), "retractNotifications", nil, nil, map[string]any{"collapse_id": argv[0]})
+			if err != nil {
+				return err
+			}
+			return a.out().Printf(resp.Body, "retracted %s on %s", argv[0], plural(str(decode(resp.Body), "devices"), "device"))
+		},
+	}
+}
+
 // waitAnswer reads a notification's answer, long-polling for up to wait.
 // With no wait, a pending answer is a result rather than a timeout.
 func (a *App) waitAnswer(ctx context.Context, id string, wait time.Duration) error {
 	var ans map[string]any
-	last, err := a.poll(ctx, "getNotificationAnswer", map[string]string{"id": id}, wait, func(b []byte) (bool, error) {
+	last, err := a.poll(ctx, "getNotificationAnswer", map[string]string{"id": id}, nil, wait, func(b []byte) (bool, error) {
 		ans = decode(b)
 		return str(ans, "status") == "answered", nil
 	})

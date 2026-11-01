@@ -79,7 +79,7 @@ func (e *unacknowledgedError) Is(target error) bool { return target == errWaitTi
 // waitReceipt reads a receipt, long-polling for up to wait while it is
 // active. With no wait, any status is a result rather than a timeout.
 func (a *App) waitReceipt(ctx context.Context, id string, wait time.Duration) error {
-	last, err := a.poll(ctx, "getNotificationReceipt", map[string]string{"id": id}, wait, func(b []byte) (bool, error) {
+	last, err := a.poll(ctx, "getNotificationReceipt", map[string]string{"id": id}, nil, wait, func(b []byte) (bool, error) {
 		switch s := str(decode(b), "status"); s {
 		case "active":
 			return false, nil

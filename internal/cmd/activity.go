@@ -557,7 +557,7 @@ Exits 7 on timeout.
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
 			var option string
-			last, err := a.poll(cmd.Context(), "getActivity", map[string]string{"slug": slug}, timeout, func(b []byte) (bool, error) {
+			last, err := a.poll(cmd.Context(), "getActivity", map[string]string{"slug": slug}, nil, timeout, func(b []byte) (bool, error) {
 				act := decode(b)
 				if tmpl := str(act, "content", "template"); tmpl != "approval" {
 					return false, fmt.Errorf("activity %s is template %q, not approval", slug, tmpl)

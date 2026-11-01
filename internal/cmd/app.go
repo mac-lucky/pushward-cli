@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -262,13 +263,15 @@ func (a *App) sleep(ctx context.Context, d time.Duration) error {
 }
 
 // poll long-polls an operation until done accepts a response or wait runs
-// out, and returns the last response. On timeout the error is
-// errWaitTimeout, still with the last response.
-func (a *App) poll(ctx context.Context, opID string, params map[string]string, wait time.Duration, done func(body []byte) (bool, error)) ([]byte, error) {
+// out, and returns the last response. query is sent with every request,
+// next to the ?wait= poll sets. On timeout the error is errWaitTimeout,
+// still with the last response.
+func (a *App) poll(ctx context.Context, opID string, params map[string]string, query url.Values, wait time.Duration, done func(body []byte) (bool, error)) ([]byte, error) {
 	deadline := a.Now().Add(wait)
 	for {
 		left := deadline.Sub(a.Now())
 		q := url.Values{}
+		maps.Copy(q, query)
 		if left >= time.Second {
 			q.Set("wait", strconv.Itoa(int(min(left, maxServerWait)/time.Second)))
 		}
