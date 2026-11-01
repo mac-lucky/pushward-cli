@@ -39,6 +39,7 @@ const (
 	kNames       // like kCSV, but an empty item is an error
 	kStep        // 2 -> current_step, 2/5 -> current_step and total_steps
 	kBool        // true or false, given as a value: --paused false must not read as a positional
+	kMinutes     // 15m,1h or 15,60 -> [15, 60]: whole minutes, a plain number is minutes
 )
 
 func addFields(cmd *cobra.Command, fields []field) {
@@ -127,6 +128,16 @@ func setField(obj map[string]any, f field, raw string, now time.Time) error {
 			list = append(list, s)
 		}
 		v = list
+	case kMinutes:
+		var list []any
+		for s := range strings.SplitSeq(raw, ",") {
+			m, err := parseMinutes(strings.TrimSpace(s))
+			if err != nil {
+				return err
+			}
+			list = append(list, m)
+		}
+		v = list
 	case kStep:
 		cur, total, hasTotal := strings.Cut(raw, "/")
 		c, err := strconv.Atoi(cur)
@@ -166,6 +177,22 @@ func parseSeconds(raw string) (int64, error) {
 		return 0, fmt.Errorf("want seconds or a duration like 90s, 15m, 2h, 7d; got %q", raw)
 	}
 	return int64(d.Round(time.Second) / time.Second), nil
+}
+
+// parseMinutes accepts whole minutes, as a plain number or as a duration
+// like 15m, 2h or 1d.
+func parseMinutes(raw string) (int64, error) {
+	if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if n < 1 {
+			return 0, fmt.Errorf("must be at least 1 minute, got %q", raw)
+		}
+		return n, nil
+	}
+	s, err := parseSeconds(raw)
+	if err != nil || s == 0 || s%60 != 0 {
+		return 0, fmt.Errorf("want whole minutes like 15, 15m, 2h or 1d; got %q", raw)
+	}
+	return s / 60, nil
 }
 
 // parseTime accepts RFC 3339, unix seconds, or a duration from now.
@@ -307,7 +334,8 @@ var notificationBaseFields = []field{
 	{"url", "url", kString, "URL opened when the notification is tapped"},
 	{"icon-url", "icon_url", kString, "avatar image URL"},
 	{"thread", "thread_id", kString, "thread id for grouping"},
-	{"collapse-id", "collapse_id", kString, "collapse id: a newer notification with the same id replaces this one"},
+	{"collapse-id", "collapse_id", kString, "collapse id: a newer notification with the same id replaces this one, and notification retract takes it back"},
+	{"snooze", "snooze", kMinutes, "offer snooze actions for 1 to 3 durations, comma-separated: 15m,1h (a plain number is minutes)"},
 	{"source", "source", kString, "source identifier"},
 	{"source-name", "source_display_name", kString, "source name shown to the user"},
 	{"activity", "activity_slug", kString, "link to an activity by slug"},

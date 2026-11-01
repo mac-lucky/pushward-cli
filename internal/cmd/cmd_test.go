@@ -194,6 +194,37 @@ func TestNotifyWaitNeedsAnswerable(t *testing.T) {
 	}
 }
 
+func TestNotifySnooze(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("POST /notifications", 201, `{"id":7}`)
+	f.reply("POST /notifications/scheduled", 201, `{"id":"3","send_at":"2026-09-29T14:00:00Z"}`)
+	for _, argv := range [][]string{
+		{"notify", "--title", "a", "--body", "b", "--snooze", "15m, 1h"},
+		{"notify", "--title", "a", "--body", "b", "--snooze", "15,60"},
+		{"schedule", "create", "--in", "2h", "--title", "a", "--body", "b", "--snooze", "15m,1h"},
+	} {
+		n := len(f.calls)
+		r := runCLI(t, srv, nil, "", argv...)
+		if r.code != 0 || len(f.calls) != n+1 {
+			t.Fatalf("%v: exit %d (%s)", argv, r.code, r.stderr)
+		}
+		if got := mustJSON(t, f.calls[n].Body["snooze"]); got != "[15,60]" {
+			t.Errorf("%v: snooze %s", argv, got)
+		}
+	}
+	for _, argv := range [][]string{
+		{"notify", "--title", "a", "--body", "b", "--snooze", "90s"},
+		{"notify", "--title", "a", "--body", "b", "--snooze", "0"},
+		{"notify", "--title", "a", "--body", "b", "--snooze", "15,"},
+		{"notify", "--title", "a", "--body", "b", "--snooze", "15", "--ack"},
+	} {
+		n := len(f.calls)
+		if r := runCLI(t, srv, nil, "", argv...); r.code != ExitUsage || len(f.calls) != n {
+			t.Errorf("%v: exit %d after %d calls, want a usage error before sending", argv, r.code, len(f.calls)-n)
+		}
+	}
+}
+
 func TestJQCheckedBeforeRequest(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("POST /notifications", 201, `{"id":1}`)

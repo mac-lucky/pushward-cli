@@ -110,6 +110,9 @@ func (n *notificationInput) build(a *App, cmd *cobra.Command) (map[string]any, e
 	if b["acknowledge"] == nil && (len(n.tags) > 0 || cmd.Flags().Changed("callback-url")) {
 		return nil, usagef("--tag and --callback-url only apply with --ack")
 	}
+	if b["acknowledge"] != nil && b["snooze"] != nil {
+		return nil, usagef("--snooze cannot be combined with --ack, which repeats the notification until someone acknowledges it")
+	}
 	// Encrypt last, so text from --data, -f and -F is sealed too.
 	switch {
 	case n.encrypt && n.noEncrypt:
@@ -176,7 +179,14 @@ expires; --wait then blocks until it is acknowledged (exit 7 otherwise), and
 pushward receipt follows or cancels it later:
 
   pushward notify --title "db-1 down" --body "Primary unreachable" \
-    --level critical --ack --ack-repeat 2m --tag db-1`,
+    --level critical --ack --ack-repeat 2m --tag db-1
+
+--snooze adds snooze actions (the device hides the notification and shows
+it again after that long), and pushward notification retract takes it back
+by its collapse id once it no longer applies:
+
+  pushward notify --title "Garage door open" --body "Since 21:40" \
+    --collapse-id garage-door --snooze 15m,1h`,
 		Args:        checkArgs,
 		Annotations: map[string]string{"operation": "createNotification"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
