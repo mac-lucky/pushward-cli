@@ -70,13 +70,15 @@ answer=$(pushward notify --title "Deploy to prod?" --body v2.4.0 \
 
 Nobody answering in time exits 7. `pushward notification answer <id> --wait 5m` picks up the same answer later.
 
-`pushward notification answers` reads the answers to every notification the key sent, oldest first, after a cursor: one script can handle many questions that way. Without `--after` it only returns the current cursor, and `notify --jq .answer_cursor` gives one from just before that send, so none of its answers are missed. `--wait 10m` blocks until an answer comes in (exit 7 if none does), and `--follow` keeps printing them, one JSON page per line, until you stop it; it then prints the cursor to resume from on stderr.
+`pushward notification answers` reads the answers to every notification the key sent, oldest first, after a cursor: one script can handle many questions that way. Without `--after` it only returns the current cursor. A reader that already holds a cursor keeps reading from it. A reader with no cursor yet takes one when it is set up, before it sends anything it waits on (`pushward notification answers --jq .cursor`), or else takes the `answer_cursor` of its first answerable send and keeps it; the `answer_cursor` of later sends adds nothing. Cursors are opaque and never compared. Only a send with a button to answer has an `answer_cursor`, so for any other `notify --jq .answer_cursor` prints `null`.
+
+Other senders on the same key show up in the stream too, so keep the `id` of each send and skip answers to the rest. `--wait 10m` blocks until an answer comes in (exit 7 if none does). `--follow` keeps printing them, one JSON page per line when piped, until you stop it, and then prints the cursor to resume from on stderr. It waits out network errors, 5xx responses and rate limits, 2s at first and doubling up to 30s, with a line on stderr for each retry (none with `-q`). A key or cursor the server refuses, or a used-up quota, ends it with the usual exit code.
 
 ```sh
 pushward notification answers --follow --jq '.items[] | "\(.notification_id) \(.action_id)"'
 ```
 
-`--snooze 15m,1h` adds snooze actions: the device hides the notification and brings it back after that long, and nothing reaches the server. `pushward notification retract <collapse-id>` takes back what was sent with that `--collapse-id` once it no longer applies. The devices remove it and `--ack` repeats stop, but it is best effort: an app that was force-quit keeps it until it runs again, and Apple devices need PushWard 1.20 or later.
+`--snooze 15m,1h` adds snooze actions: the device hides the notification and brings it back after that long, and nothing reaches the server. `pushward notification retract <collapse-id>` takes back what was sent with that `--collapse-id` once it no longer applies. The devices remove it and `--ack` repeats stop, but it is best effort: an app that was force-quit keeps it until it runs again. iPhone, iPad and Mac need PushWard 1.20 or later; Apple Watch is not sent to.
 
 ```sh
 pushward notify --title "Garage door open" --body "Since 21:40" --collapse-id garage-door --snooze 15m,1h

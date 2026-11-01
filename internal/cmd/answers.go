@@ -35,18 +35,32 @@ every notification the key sent. Each response carries the cursor to pass
 as --after next time.
 
 Without --after it prints no answers, only the current cursor, so a new
-reader does not replay the answers kept for 30 days. To catch every answer
-to a notification, start from the answer_cursor its send returned:
+reader does not replay the answers kept for 30 days. A reader that already
+holds a cursor keeps reading from it. A reader with no cursor yet takes one
+when it is set up, before it sends anything it waits on, or else takes the
+answer_cursor of its first answerable send and keeps it; the answer_cursor
+of later sends adds nothing. Cursors are opaque and never compared. A send
+with no button to answer has no answer_cursor: --jq .answer_cursor prints
+null for it.
 
-  cursor=$(pushward notify --title "Deploy?" --body v2.4.0 --action go=Go --jq .answer_cursor)
-  pushward notification answers --after "$cursor" --wait 10m
+The stream holds the answers to everything the key sent, so other senders
+on the same key show up in it too. Keep the id of each send and act only
+on those. To wait for one notification, notify --wait or notification
+answer <id> --wait is simpler.
+
+  cursor=$(pushward notification answers --jq .cursor)
+  api=$(pushward notify --title "Deploy api?" --body v2.4.0 --action go=Go --jq .id)
+  web=$(pushward notify --title "Deploy web?" --body v2.4.0 --action go=Go --jq .id)
+  pushward notification answers --after "$cursor" --follow \
+    --jq ".items[] | select(.notification_id == $api or .notification_id == $web)"
 
 --wait blocks until at least one answer comes in, and exits 7 if none does
 in time. --follow keeps reading and prints the answers as they come in,
-one page of JSON per line when piped, until it is interrupted; it then
-prints the cursor to resume from on stderr:
-
-  pushward notification answers --follow --jq '.items[] | "\(.notification_id) \(.action_id)"'`,
+one JSON page per line when piped, until it is interrupted; it then prints
+the cursor to resume from on stderr. It waits out network errors, 5xx
+responses and rate limits, 2s at first and doubling up to 30s, with a line
+on stderr for each retry unless -q is set. Anything else ends it with the
+usual exit code: a key or cursor the server refuses, or a used-up quota.`,
 		Args:        checkArgs,
 		Annotations: map[string]string{"operation": "listNotificationAnswers"},
 		RunE: func(cmd *cobra.Command, _ []string) error {

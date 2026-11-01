@@ -276,8 +276,9 @@ devices the retraction was sent to.
   pushward notification retract garage-door
 
 Best effort: an app that was force-quit keeps the notification on screen
-until it runs again, and Apple devices need PushWard 1.20 or later. An
-account can retract 10 times a minute.`,
+until it runs again. iPhone, iPad and Mac need PushWard 1.20 or later;
+Apple Watch is not sent to. An account can retract 10 times a minute, in
+bursts of up to 5.`,
 		Args:        checkArgs,
 		Annotations: map[string]string{"operation": "retractNotifications"},
 		RunE: func(cmd *cobra.Command, argv []string) error {

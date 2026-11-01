@@ -105,17 +105,28 @@ button with a text field, `-F 'actions[]={"id":"reply","title":"Reply","text_inp
 and read the reply with `--jq .text`.
 
 To ask several questions and act on each answer as it comes, wait on all of them at once.
-Keep the cursor from the first send, and read the answers that come after it:
+Take the cursor before you send anything, keep the id of every send, then read the answers
+that come after the cursor:
 
 ```sh
-cursor=$(pushward notify --title "Merge PR #42?" --body "CI green" --action merge=Merge --action 'hold=Not yet' --jq .answer_cursor)
-pushward notify --title "Merge PR #43?" --body "2 files changed" --action merge=Merge --action 'hold=Not yet' -q
+cursor=$(pushward notification answers --jq .cursor)
+id1=$(pushward notify --title "Merge PR #42?" --body "CI green" --action merge=Merge --action 'hold=Not yet' --jq .id)
+id2=$(pushward notify --title "Merge PR #43?" --body "2 files changed" --action merge=Merge --action 'hold=Not yet' --jq .id)
 pushward notification answers --after "$cursor" --wait 9m --json
 ```
 
 That prints `{"items": [...], "cursor": "..."}`; each item has `notification_id`, `action_id`
-and `text`. Run it again with `--after` set to the new cursor until every question has an
-answer; exit 7 means nothing new came in during the wait.
+and `text`. The stream holds the answers to everything sent with the key, so other senders
+on the same key show up in it: act only on items whose `notification_id` is one you kept
+(`$id1`, `$id2`), and ignore the rest. Run it again with `--after` set to the new cursor until
+every question you sent has an answer; exit 7 means nothing new came in during the wait.
+
+A reader that already holds a cursor keeps reading from it. A reader with no cursor yet takes
+one when it is set up, before it sends anything it waits on
+(`pushward notification answers --jq .cursor`), or else takes the `answer_cursor` of its
+first answerable send and keeps it; the `answer_cursor` of later sends adds nothing. A send
+with no button to answer has no `answer_cursor` (`--jq .answer_cursor` prints `null`).
+Cursors are opaque: pass them on as they are and never compare them.
 
 For a question that should sit on the Lock Screen until answered, use an approval card. Give
 every question a new slug: an approval that is started again with the same buttons keeps the
