@@ -55,7 +55,7 @@ var inputFlags = []struct {
 
 // refusedInAction are the commands the Action will not run: auth writes a
 // config file, and e2e prints keys and decrypted text, which do not belong in
-// a job log.
+// a job log. ghaArgs also refuses notification answers --follow.
 var refusedInAction = map[string]bool{
 	"auth": true, "completion": true, "e2e": true, "gha": true, "help": true, "version": true,
 }
@@ -266,6 +266,11 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 	}
 	if f := target.Flags().Lookup("api-url"); f != nil && f.Changed {
 		return nil, "", usagef("set the API URL with the api-url input, not in command")
+	}
+	// --follow only ends when it is interrupted, so the job would run until
+	// its timeout and fail there.
+	if f := target.Flags().Lookup("follow"); f != nil && f.Value.String() == "true" && target.CommandPath() == "pushward notification answers" {
+		return nil, "", usagef("notification answers --follow is not available in the Action, it never ends; use --wait")
 	}
 
 	env := a.Getenv

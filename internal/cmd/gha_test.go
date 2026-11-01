@@ -131,6 +131,8 @@ func TestGHAGuards(t *testing.T) {
 		"flag before e2e":  {map[string]string{"token": "hlk", "command": "--json e2e decrypt pw1.x"}, "not available"},
 		"short flag e2e":   {map[string]string{"token": "hlk", "command": "-q e2e generate"}, "not available"},
 		"jq before auth":   {map[string]string{"token": "hlk", "command": "--jq .x auth status"}, "not available"},
+		"answers follow":   {map[string]string{"token": "hlk", "command": "notification answers --follow"}, "--follow is not available"},
+		"answers follow=1": {map[string]string{"token": "hlk", "command": "notification answers --after 57 --follow=true"}, "--follow is not available"},
 		"unknown":          {map[string]string{"token": "hlk", "command": "frobnicate"}, "unknown command"},
 		"group only":       {map[string]string{"token": "hlk", "command": "activity"}, "unknown command"},
 		"url in command":   {map[string]string{"token": "hlk", "command": "notify --api-url https://evil.example"}, "api-url input"},
@@ -144,6 +146,23 @@ func TestGHAGuards(t *testing.T) {
 		r := runCLI(t, srv, env, "", "gha")
 		if !strings.Contains(r.stdout, tc.want) {
 			t.Errorf("%s: stdout %q, want %q", name, r.stdout, tc.want)
+		}
+	}
+}
+
+// --follow never ends, so the Action refuses it before any request; --wait
+// is the way to wait there.
+func TestGHAAnswersFollowRefused(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("GET /notifications/answers", 200, `{"items":[{"notification_id":9,"action_id":"go"}],"cursor":"58"}`)
+	env, _ := ghaEnv(t, map[string]string{"token": "hlk_a", "command": "notification answers --after 57 --follow"})
+	if r := runCLI(t, srv, env, "", "gha"); r.code != ExitUsage || len(f.calls) != 0 {
+		t.Errorf("--follow: exit %d after %d calls\n%s", r.code, len(f.calls), r.stdout)
+	}
+	for _, command := range []string{"notification answers --after 57 --wait 1m", "notification answers --after 57 --follow=false"} {
+		env, _ := ghaEnv(t, map[string]string{"token": "hlk_a", "command": command})
+		if r := runCLI(t, srv, env, "", "gha"); r.code != 0 {
+			t.Errorf("%s: exit %d\n%s", command, r.code, r.stdout)
 		}
 	}
 }
