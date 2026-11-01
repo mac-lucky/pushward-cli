@@ -70,6 +70,19 @@ answer=$(pushward notify --title "Deploy to prod?" --body v2.4.0 \
 
 Nobody answering in time exits 7. `pushward notification answer <id> --wait 5m` picks up the same answer later.
 
+`pushward notification answers` reads the answers to every notification the key sent, oldest first, after a cursor: one script can handle many questions that way. Without `--after` it only returns the current cursor, and `notify --jq .answer_cursor` gives one from just before that send, so none of its answers are missed. `--wait 10m` blocks until an answer comes in (exit 7 if none does), and `--follow` keeps printing them, one JSON page per line, until you stop it; it then prints the cursor to resume from on stderr.
+
+```sh
+pushward notification answers --follow --jq '.items[] | "\(.notification_id) \(.action_id)"'
+```
+
+`--snooze 15m,1h` adds snooze actions: the device hides the notification and brings it back after that long, and nothing reaches the server. `pushward notification retract <collapse-id>` takes back what was sent with that `--collapse-id` once it no longer applies. The devices remove it and `--ack` repeats stop, but it is best effort: an app that was force-quit keeps it until it runs again, and Apple devices need PushWard 1.20 or later.
+
+```sh
+pushward notify --title "Garage door open" --body "Since 21:40" --collapse-id garage-door --snooze 15m,1h
+pushward notification retract garage-door
+```
+
 ## Repeat until acknowledged
 
 With `--ack`, `notify` and `schedule create` send the notification again and again until someone taps Acknowledge on one of the devices, or until it expires. It repeats every minute for an hour unless `--ack-repeat` (30s to 1h) and `--ack-expire` (1m to 3h) say otherwise, and the repeats do not count against your quota. Any other button without a url acknowledges it too.

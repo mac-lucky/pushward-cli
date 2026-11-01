@@ -33,8 +33,8 @@ every notification the key sent. Each response carries the cursor to pass
 as --after next time.
 
 Without --after it prints no answers, only the current cursor, so a new
-reader does not replay the answers kept for 30 days. To catch the answers
-to a notification you are about to send, start from its answer_cursor:
+reader does not replay the answers kept for 30 days. To catch every answer
+to a notification, start from the answer_cursor its send returned:
 
   cursor=$(pushward notify --title "Deploy?" --body v2.4.0 --action go=Go --jq .answer_cursor)
   pushward notification answers --after "$cursor" --wait 10m

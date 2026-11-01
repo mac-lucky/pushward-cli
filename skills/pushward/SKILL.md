@@ -18,7 +18,8 @@ pushward auth status
 Not installed: `brew install mac-lucky/tap/pushward`, or
 `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`. Ask before installing.
 Everything below works on 1.2.0 and later; the organization target flags need 1.3.0 (1.5.0
-on widgets), and encryption and `--ack` need 1.4.0.
+on widgets), encryption and `--ack` need 1.4.0, and `--snooze`, `notification answers` and
+`notification retract` need 1.8.0.
 
 `auth status` exiting 3 means no usable key. The user has to fix that themselves, in their own
 terminal: `pushward auth login` prompts for the `hlk_` integration key from the app's
@@ -44,6 +45,7 @@ whose slug starts with `agent-`, which is why the examples below use that prefix
 | to know when something finished or failed | `pushward notify` |
 | to be told right away that you are blocked | `pushward notify --level time-sensitive` |
 | an alert that must not go unseen (an outage, a failed backup) | `pushward notify --ack`, repeating until they acknowledge it |
+| to drop a notification that no longer applies | `pushward notification retract` with its `--collapse-id` |
 | to approve, pick an option, or type a reply | `pushward notify --action ...`, then `notification answer --wait`; or an approval Live Activity |
 | to watch a long task move | a Live Activity: `activity start`, a few `activity update`, `activity end` |
 | a number they can glance at later (coverage, queue length, spend) | `pushward widget create` once, then `widget update` |
@@ -67,7 +69,19 @@ Titles carry the news; bodies carry the one detail that matters (counts, duratio
 branch). A body holds at most 4096 characters. `--level` is `passive`, `active` (default),
 `time-sensitive` or `critical`; keep `time-sensitive` for "I am stuck until you answer" and
 never use `critical` unless asked. `--collapse-id` replaces an earlier notification with the
-same id instead of stacking a new one.
+same id instead of stacking a new one, and `notification retract` takes it back off their
+devices once it is no longer true:
+
+```sh
+pushward notify --title "Staging is down" --body "502 from the load balancer" --collapse-id staging-down --snooze 30m
+pushward notification retract staging-down
+```
+
+Retract is best effort (an app that was force-quit keeps it on screen) and limited to 10 a
+minute, so run it when the state changes, not on every check. `--snooze` adds one snooze
+button per duration (1 to 3, comma-separated); the phone brings the notification back by
+itself and nothing comes back to you, so there is nothing to wait for. It does not combine
+with `--ack`.
 
 ## Asking and waiting
 
@@ -89,6 +103,19 @@ answer, report that as "no decision", not as a no.
 Actions must not carry a URL if you want the answer back. To let them type a reply, add a
 button with a text field, `-F 'actions[]={"id":"reply","title":"Reply","text_input":true}'`,
 and read the reply with `--jq .text`.
+
+To ask several questions and act on each answer as it comes, wait on all of them at once.
+Keep the cursor from the first send, and read the answers that come after it:
+
+```sh
+cursor=$(pushward notify --title "Merge PR #42?" --body "CI green" --action merge=Merge --action 'hold=Not yet' --jq .answer_cursor)
+pushward notify --title "Merge PR #43?" --body "2 files changed" --action merge=Merge --action 'hold=Not yet' -q
+pushward notification answers --after "$cursor" --wait 9m --json
+```
+
+That prints `{"items": [...], "cursor": "..."}`; each item has `notification_id`, `action_id`
+and `text`. Run it again with `--after` set to the new cursor until every question has an
+answer; exit 7 means nothing new came in during the wait.
 
 For a question that should sit on the Lock Screen until answered, use an approval card. Give
 every question a new slug: an approval that is started again with the same buttons keeps the
