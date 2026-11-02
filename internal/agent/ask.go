@@ -284,11 +284,16 @@ func (a *ask) round(ctx context.Context, rd round) (reply, outcome) {
 			}
 		case <-check:
 			check = nil
-			wg.Go(func() { starts <- a.startCounts(wctx) })
+			if notification == "" {
+				wg.Go(func() { starts <- a.startCounts(wctx) })
+			}
 		case sc := <-starts:
 			first := !a.targetsRead
 			a.targetsRead = true
 			switch {
+			case notification != "":
+				// The card ended meanwhile and the notification is out.
+				continue
 			case !sc.ok:
 				// Read again once the window has passed, or give up: a card
 				// whose counts the server leaves out (an organization's)
