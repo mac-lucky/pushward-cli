@@ -116,5 +116,5 @@ outputs:
 
 runs:
   using: docker
-  image: 'docker://ghcr.io/mac-lucky/pushward-cli:0.0.0'
+  image: 'docker://ghcr.io/mac-lucky/pushward-cli:1.8.1@sha256:41fa87baf5fe52a8bb23e477bb15cad9b4a81eb278cb945dcf910b01d5b79ef5'
   args: [gha]
