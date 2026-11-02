@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -353,16 +354,21 @@ func TestConfirmedCardSendsNoNotification(t *testing.T) {
 	}
 }
 
+// A personal key refused the card (the plan, a key that may only send
+// notifications) gets the notification: its own check says it is personal.
 func TestCreateRefusedSendsNotificationOnly(t *testing.T) {
-	for _, status := range []int{402, 403, 422} {
+	for _, c := range []struct {
+		status int
+		code   string
+	}{{402, ""}, {403, ""}, {403, "integration_key.permission_denied"}, {422, ""}} {
 		f := newFakeAPI()
-		f.createStatus = status
+		f.createStatus, f.createCode = c.status, c.code
 		f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "allow", "", time.Minute }
 		if out, _ := run(t, f, away(), nil, Claude, claudePermission); out != allowOut {
-			t.Fatalf("%d: stdout %s", status, out)
+			t.Fatalf("%d %s: stdout %s", c.status, c.code, out)
 		}
-		if len(f.steps()) != 0 || len(f.asked()) != 1 {
-			t.Errorf("%d: %d card updates, %d notifications", status, len(f.steps()), len(f.asked()))
+		if len(f.steps()) != 0 || len(f.asked()) != 1 || f.probes != 2 {
+			t.Errorf("%d %s: %d card updates, %d notifications, %d key checks", c.status, c.code, len(f.steps()), len(f.asked()), f.probes)
 		}
 	}
 }
@@ -536,6 +542,85 @@ func TestOrgKeySendsNothing(t *testing.T) {
 		_, err = r.Test(context.Background(), "")
 	})
 	if err != ErrOrgKey || len(f.calls) != 0 {
+		t.Errorf("test: %v, %d requests", err, len(f.calls))
+	}
+}
+
+// An organization's key that may send notifications but not manage
+// activities is refused the card before its target is read. The fallback
+// notification would still reach the organization, so the notification
+// check finds it out and nothing is sent.
+func TestOrgKeyWithoutActivitiesSendsNothing(t *testing.T) {
+	stop := `{"session_id":"s","cwd":"/w","hook_event_name":"Stop","last_assistant_message":"done"}`
+	notice := `{"session_id":"s","hook_event_name":"Notification","message":"waiting","notification_type":"idle_prompt"}`
+	for name, c := range map[string]struct {
+		agent   Agent
+		in, out string
+	}{
+		"permission": {Claude, claudePermission, ""},
+		"codex":      {Codex, codexPermission, ""},
+		"questions":  {Claude, askInput(questionsJSON), ""},
+		"stop":       {Claude, stop, ""},
+		"notice":     {Claude, notice, ""},
+		"codex stop": {Codex, stop, "{}\n"},
+	} {
+		f := newFakeAPI()
+		f.org = true
+		f.createStatus, f.createCode = http.StatusForbidden, "integration_key.permission_denied"
+		f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "allow", "", time.Second }
+		out, logs := run(t, f, away(), nil, c.agent, c.in)
+		if out != c.out || len(f.calls) != 0 || f.probes != 2 {
+			t.Errorf("%s: stdout %q, %d requests, %d key checks", name, out, len(f.calls), f.probes)
+		}
+		if !strings.Contains(logs, "organization's key") {
+			t.Errorf("%s: log %s", name, logs)
+		}
+	}
+	f := newFakeAPI()
+	f.org = true
+	f.createStatus, f.createCode = http.StatusForbidden, "integration_key.permission_denied"
+	var err error
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := newRunner(f, away())
+		_, err = r.Test(context.Background(), "")
+	})
+	if err != ErrOrgKey || len(f.calls) != 0 {
+		t.Errorf("test: %v, %d requests", err, len(f.calls))
+	}
+}
+
+// Refused both creates before the target is read, the key may be an
+// organization's: nothing is sent.
+func TestUncheckedKeySendsNothing(t *testing.T) {
+	for name, c := range map[string]struct {
+		agent Agent
+		in    string
+	}{
+		"permission": {Claude, claudePermission},
+		"codex":      {Codex, codexPermission},
+		"questions":  {Claude, askInput(questionsJSON)},
+		"stop":       {Claude, `{"session_id":"s","cwd":"/w","hook_event_name":"Stop","last_assistant_message":"done"}`},
+	} {
+		f := newFakeAPI()
+		f.createStatus, f.createCode = http.StatusForbidden, "integration_key.permission_denied"
+		f.notifStatus, f.notifCode = http.StatusForbidden, "integration_key.permission_denied"
+		out, logs := run(t, f, away(), nil, c.agent, c.in)
+		if (out != "" && out != "{}\n") || len(f.calls) != 0 || f.probes != 2 {
+			t.Errorf("%s: stdout %q, %d requests, %d key checks", name, out, len(f.calls), f.probes)
+		}
+		if !strings.Contains(logs, "sending nothing") {
+			t.Errorf("%s: log %s", name, logs)
+		}
+	}
+	f := newFakeAPI()
+	f.createStatus, f.createCode = http.StatusForbidden, "integration_key.permission_denied"
+	f.notifStatus, f.notifCode = http.StatusForbidden, "integration_key.permission_denied"
+	var err error
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := newRunner(f, away())
+		_, err = r.Test(context.Background(), "")
+	})
+	if !errors.Is(err, ErrKeyUnchecked) || len(f.calls) != 0 {
 		t.Errorf("test: %v, %d requests", err, len(f.calls))
 	}
 }

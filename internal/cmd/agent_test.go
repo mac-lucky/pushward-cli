@@ -24,7 +24,16 @@ func agentSlug(session, tool, canonicalInput string) string {
 // personal key, or for an organization's when org is set: a create with a
 // target (the key check) is refused, any other gets status and body.
 func createRoute(f *fakeAPI, org bool, status int, body string) {
-	f.routes["POST /activities"] = func(c call) (int, string) {
+	f.routes["POST /activities"] = targetRoute(org, status, body)
+}
+
+// notifyRoute is createRoute for POST /notifications.
+func notifyRoute(f *fakeAPI, org bool, status int, body string) {
+	f.routes["POST /notifications"] = targetRoute(org, status, body)
+}
+
+func targetRoute(org bool, status int, body string) func(call) (int, string) {
+	return func(c call) (int, string) {
 		switch {
 		case c.Body["target"] == nil:
 			return status, body
@@ -34,6 +43,8 @@ func createRoute(f *fakeAPI, org bool, status int, body string) {
 		return 422, `{"status":422,"code":"org.target_unavailable","detail":"target is for organization keys"}`
 	}
 }
+
+const permissionDenied = `{"status":403,"code":"integration_key.permission_denied","detail":"this key may not do that"}`
 
 // sentTo is every request to method and path, in order.
 func sentTo(f *fakeAPI, method, path string) []call {
@@ -83,6 +94,22 @@ func TestAgentHookRefusesOrganizationKeys(t *testing.T) {
 	r = runCLI(t, srv, nil, "", "agent", "test")
 	if r.code == 0 || !strings.Contains(r.stderr, "personal key") {
 		t.Errorf("agent test: exit %d stderr %s", r.code, r.stderr)
+	}
+
+	// An organization's key that may send notifications but not manage
+	// activities: the notification fallback would reach the organization.
+	f.calls = nil
+	f.reply("POST /activities", 403, permissionDenied)
+	notifyRoute(f, true, 201, `{"id":1,"answerable":true}`)
+	f.reply("GET /notifications/answers/1", 200, `{"notification_id":1,"status":"answered","action_id":"allow"}`)
+	r = runCLI(t, srv, nil, hookPermission, "agent", "hook", "claude", "--desk", "away")
+	if r.code != 0 || r.stdout != "" || !strings.Contains(r.stderr, "organization's key") {
+		t.Fatalf("notifications-only key: exit %d stdout %q stderr %s", r.code, r.stdout, r.stderr)
+	}
+	for _, c := range f.calls {
+		if c.Body["target"] == nil {
+			t.Errorf("notifications-only key sent %s %s %v", c.Method, c.Path, c.Body)
+		}
 	}
 }
 
@@ -184,6 +211,7 @@ func TestAgentHookFailuresLeaveThePromptToTheTerminal(t *testing.T) {
 
 func TestAgentHookLogFile(t *testing.T) {
 	f, srv := newFake(t)
+	createRoute(f, false, 201, `{}`)
 	f.reply("POST /notifications", 201, `{"id":1}`)
 	logPath := filepath.Join(t.TempDir(), "agent.log")
 	r := runCLI(t, srv, nil, `{"session_id":"s","cwd":"/w","hook_event_name":"Stop","last_assistant_message":"secret summary"}`,
@@ -247,6 +275,7 @@ func TestAgentInstallCommand(t *testing.T) {
 func TestAgentStatus(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("GET /auth/me", 200, `{"id":"u1"}`)
+	createRoute(f, false, 201, `{}`)
 	dir := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "claude"))
 	t.Setenv("CODEX_HOME", filepath.Join(dir, "codex"))
@@ -278,6 +307,21 @@ func TestAgentStatus(t *testing.T) {
 	if r = runCLI(t, srv, nil, "", "agent", "status"); !strings.Contains(r.stdout, "an organization's key: the hooks need a personal one") {
 		t.Errorf("organization key:\n%s", r.stdout)
 	}
+	// Refused the activity before its target is read, the notification
+	// check tells; refused that too, nothing does.
+	f.reply("POST /activities", 403, permissionDenied)
+	notifyRoute(f, true, 201, `{"id":1}`)
+	if r = runCLI(t, srv, nil, "", "agent", "status"); !strings.Contains(r.stdout, "an organization's key: the hooks need a personal one") {
+		t.Errorf("notifications-only organization key:\n%s", r.stdout)
+	}
+	notifyRoute(f, false, 201, `{"id":1}`)
+	if r = runCLI(t, srv, nil, "", "agent", "status"); !strings.Contains(r.stdout, "key      from $PUSHWARD_API_TOKEN, works") {
+		t.Errorf("notifications-only personal key:\n%s", r.stdout)
+	}
+	f.reply("POST /notifications", 403, permissionDenied)
+	if r = runCLI(t, srv, nil, "", "agent", "status"); !strings.Contains(r.stdout, "could not tell whether this is a personal key; the agent hooks send nothing with it (POST /notifications: 403 integration_key.permission_denied)") {
+		t.Errorf("unchecked key:\n%s", r.stdout)
+	}
 	f.reply("GET /auth/me", 401, `{"status":401,"code":"auth.invalid"}`)
 	if r = runCLI(t, srv, nil, "", "agent", "status"); r.code != ExitAuth || !strings.Contains(r.stdout, "refused") {
 		t.Errorf("refused key: exit %d\n%s", r.code, r.stdout)
@@ -286,6 +330,7 @@ func TestAgentStatus(t *testing.T) {
 
 func TestAgentTestCommand(t *testing.T) {
 	f, srv := newFake(t)
+	createRoute(f, false, 201, `{}`)
 	f.reply("POST /notifications", 201, `{"id":1,"answerable":true}`)
 	f.routes["GET /notifications/answers/1"] = func(call) (int, string) {
 		// Every question's notification goes out as id 1 here; answer the

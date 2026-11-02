@@ -33,10 +33,15 @@ type fakeAPI struct {
 	mu    sync.Mutex
 	calls []call
 
-	// createStatus, when set, refuses POST /activities with that status
-	// and detail.
+	// createStatus, when set, refuses POST /activities with that status,
+	// code (plan.required when "") and detail, before the target is read.
 	createStatus int
+	createCode   string
 	createDetail string
+	// notifStatus, when set, refuses POST /notifications with that status
+	// and code, before the target is read.
+	notifStatus int
+	notifCode   string
 	// existing is the stored activity a create finds, "" for none.
 	existing string
 	// started is the devices_started a read reports, -1 to leave it out.
@@ -133,13 +138,14 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 	switch {
 	case c.Method == "POST" && c.Path == "/activities":
 		if f.createStatus != 0 {
-			return problem(f.createStatus, "plan.required", f.createDetail)
+			code := f.createCode
+			if code == "" {
+				code = "plan.required"
+			}
+			return problem(f.createStatus, code, f.createDetail)
 		}
 		if probe(c) {
-			if f.org {
-				return problem(422, "org.target_invalid", "target must name at least one group, tag or member")
-			}
-			return problem(422, codeTargetUnavailable, "target is for organization keys")
+			return f.refuseTarget()
 		}
 		if f.act == nil {
 			f.act = &fakeActivity{state: "ongoing", content: map[string]any{}, created: time.Now()}
@@ -193,6 +199,12 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 			return 200, f.activityJSON()
 		})
 	case c.Method == "POST" && c.Path == "/notifications":
+		if f.notifStatus != 0 {
+			return problem(f.notifStatus, f.notifCode, "scripted")
+		}
+		if probe(c) {
+			return f.refuseTarget()
+		}
 		n := &fakeNotification{sent: c.Body, at: time.Now()}
 		f.notifs = append(f.notifs, n)
 		out := map[string]any{"id": len(f.notifs)}
@@ -326,9 +338,19 @@ func (f *fakeAPI) activityJSON() map[string]any {
 	return out
 }
 
-// probe reports whether c is the key check: a create with a target.
+// refuseTarget answers a create with an empty target the way the server
+// does for the key: an invalid target from an organization's, one a personal
+// key cannot have from any other.
+func (f *fakeAPI) refuseTarget() (int, any) {
+	if f.org {
+		return problem(422, "org.target_invalid", "target must name at least one group, tag or member")
+	}
+	return problem(422, codeTargetUnavailable, "target is for organization keys")
+}
+
+// probe reports whether c is a key check: a create with a target.
 func probe(c call) bool {
-	return c.Method == "POST" && c.Path == "/activities" && c.Body["target"] != nil
+	return c.Method == "POST" && (c.Path == "/activities" || c.Path == "/notifications") && c.Body["target"] != nil
 }
 
 func sameJSON(a, b any) bool {

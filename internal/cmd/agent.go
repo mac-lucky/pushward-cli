@@ -322,11 +322,17 @@ refused.`,
 					src = "$PUSHWARD_API_TOKEN"
 				}
 				_, keyErr = a.call(cmd.Context(), "getMe", nil, nil, nil)
+				var kindErr error
+				if keyErr == nil {
+					kindErr = a.agentRunner(agent.DefaultOptions(), log.New(io.Discard, "", 0)).CheckKey(cmd.Context())
+				}
 				switch {
 				case keyErr != nil:
 					fmt.Fprintf(w, "key      from %s, refused: %v\n", src, keyErr)
-				case errors.Is(a.agentRunner(agent.DefaultOptions(), log.New(io.Discard, "", 0)).CheckKey(cmd.Context()), agent.ErrOrgKey):
+				case errors.Is(kindErr, agent.ErrOrgKey):
 					fmt.Fprintf(w, "key      from %s, an organization's key: the hooks need a personal one and send nothing with it\n", src)
+				case kindErr != nil:
+					fmt.Fprintf(w, "key      from %s, %v\n", src, kindErr)
 				default:
 					fmt.Fprintf(w, "key      from %s, works\n", src)
 				}
