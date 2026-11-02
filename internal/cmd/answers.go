@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
-	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -177,7 +175,7 @@ func (a *App) waitAnswers(ctx context.Context, after string, q url.Values, wait 
 
 // followAnswers reads the stream until interrupted. Each page with answers
 // is printed as it arrives: one compact JSON line when piped, so a reader
-// can take it line by line. It waits out outages (see followRetries), and
+// can take it line by line. It waits out outages (see api.Transient), and
 // when it stops the cursor to resume from goes to stderr, unless the cursor
 // the caller passed was refused before it read anything.
 func (a *App) followAnswers(ctx context.Context, cursor string, q url.Values) (err error) {
@@ -210,8 +208,8 @@ func (a *App) followAnswers(ctx context.Context, cursor string, q url.Values) (e
 		case err == nil:
 		case ctx.Err() != nil:
 			return nil
-		case followRetries(err):
-			delay := followBackoff(failures, err)
+		case api.Transient(err):
+			delay := api.Backoff(failures, err)
 			failures++
 			if !a.quiet {
 				a.out().Warnf("%v; retrying in %s", err, delay.Round(100*time.Millisecond))
@@ -250,39 +248,4 @@ func (a *App) followAnswers(ctx context.Context, cursor string, q url.Values) (e
 			}
 		}
 	}
-}
-
-// followRetries reports whether follow waits out err: the network, the
-// server and a rate limit (the key's long-poll slots being taken included)
-// get better by waiting. Anything else ends it, a key or a cursor the server
-// refuses and a used-up quota among them.
-func followRetries(err error) bool {
-	var te *api.TransportError
-	var ae *api.Error
-	switch {
-	case errors.As(err, &te):
-		return true
-	case errors.As(err, &ae):
-		return ae.Status >= 500 || (ae.Status == http.StatusTooManyRequests && ae.Code != api.CodeQuotaExceeded)
-	}
-	return false
-}
-
-const (
-	followRetryMin = 2 * time.Second
-	followRetryMax = 30 * time.Second
-)
-
-// followBackoff is the wait after the n-th failure in a row, counting from
-// 0: 2s doubling to 30s, up to a quarter less for jitter, so readers that
-// lost the server together do not come back together. A longer
-// retry_after_ms from the server wins, up to the same 30s.
-func followBackoff(n int, err error) time.Duration {
-	base := min(followRetryMin<<min(n, 5), followRetryMax)
-	d := base - rand.N(base/4) // #nosec G404 -- retry jitter, not security-sensitive
-	var ae *api.Error
-	if errors.As(err, &ae) && ae.RetryAfterMs > 0 {
-		d = max(d, min(time.Duration(ae.RetryAfterMs)*time.Millisecond, followRetryMax))
-	}
-	return d
 }

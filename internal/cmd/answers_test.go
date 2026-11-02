@@ -9,8 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/mac-lucky/pushward-cli/internal/api"
 )
 
 func TestNotificationRetract(t *testing.T) {
@@ -294,29 +292,6 @@ func TestNotificationAnswersFollowRetries(t *testing.T) {
 	r = runCLI(t, srv, nil, "", "notification", "answers", "--follow", "-q")
 	if r.code != ExitAuth || strings.Contains(r.stderr, "retrying") || strings.Contains(r.stderr, "resume") {
 		t.Errorf("-q: exit %d stderr %q", r.code, r.stderr)
-	}
-}
-
-func TestFollowBackoff(t *testing.T) {
-	for n, top := range []time.Duration{2, 4, 8, 16, 30, 30, 30} {
-		top *= time.Second
-		for range 50 {
-			if d := followBackoff(n, errors.New("reset")); d <= top*3/4 || d > top {
-				t.Fatalf("failure %d: waited %s, want up to a quarter under %s", n, d, top)
-			}
-		}
-	}
-	if d := followBackoff(1000, nil); d > followRetryMax {
-		t.Errorf("a long outage waits %s", d)
-	}
-	// The server asking for longer wins, up to the cap.
-	slow := &api.Error{Status: 429, Code: api.CodeAnswerWaitLimit, RetryAfterMs: 10_000}
-	if d := followBackoff(0, slow); d != 10*time.Second {
-		t.Errorf("retry_after_ms 10000: waited %s", d)
-	}
-	slow.RetryAfterMs = 600_000
-	if d := followBackoff(0, slow); d != followRetryMax {
-		t.Errorf("retry_after_ms 600000: waited %s", d)
 	}
 }
 
