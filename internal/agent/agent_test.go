@@ -80,7 +80,7 @@ func TestClaudePermission(t *testing.T) {
 				t.Fatalf("card updates %+v", steps)
 			}
 			c := steps[0]
-			for k, v := range map[string]any{"template": "approval", "state": "Run: " + bashCommand, "source": "webapp", "on_expire": "none"} {
+			for k, v := range map[string]any{"template": "approval", "state": "Run a command", "source": "webapp", "on_expire": "none"} {
 				if c[k] != v {
 					t.Errorf("content.%s = %v, want %v", k, c[k], v)
 				}
@@ -92,7 +92,8 @@ func TestClaudePermission(t *testing.T) {
 			if got := mustJSON(t, c["options"]); got != wantOpts {
 				t.Errorf("options\n got  %s\n want %s", got, wantOpts)
 			}
-			wantDetails := `[{"label":"Bash","value":"` + bashCommand + `"},{"label":"Repo","value":"webapp"}]`
+			// The command once, in the tool's row; the repo is the source.
+			wantDetails := `[{"label":"Bash","value":"` + bashCommand + `"}]`
 			if got := mustJSON(t, c["details"]); got != wantDetails {
 				t.Errorf("details %s", got)
 			}
@@ -132,8 +133,8 @@ func TestCodexPermission(t *testing.T) {
 				t.Errorf("Codex fails closed on %s", out)
 			}
 			c := f.steps()[0]
-			if c["state"] != "Run: cargo build --release" {
-				t.Errorf("state %v", c["state"])
+			if c["state"] != "Run a command" || mustJSON(t, c["details"]) != `[{"label":"Bash","value":"cargo build --release"}]` {
+				t.Errorf("state %v, details %v", c["state"], c["details"])
 			}
 			if got := mustJSON(t, c["options"]); got != `[{"icon":"mdi:check","id":"allow","style":"primary","title":"Allow"},{"icon":"mdi:close","id":"deny","style":"destructive","title":"Deny"}]` {
 				t.Errorf("Codex gets no Always: %s", got)
@@ -180,7 +181,6 @@ func TestQuestionsStepByStep(t *testing.T) {
 		`[{"id":"q3o1","title":"Slack"},{"id":"q3o2","title":"Email"}]`,
 	}
 	wantState := []string{"Which database should we use?", "Ship it today?", "Notify the team?"}
-	wantHeader := []string{"Database", "Release", "Notify"}
 	for i, s := range steps {
 		if s["step"] != float64(i+1) || s["step_count"] != float64(3) {
 			t.Errorf("update %d: step %v of %v", i, s["step"], s["step_count"])
@@ -191,8 +191,10 @@ func TestQuestionsStepByStep(t *testing.T) {
 		if got := mustJSON(t, s["options"]); got != wantOpts[i] {
 			t.Errorf("update %d options\n got  %s\n want %s", i, got, wantOpts[i])
 		}
-		if got := mustJSON(t, s["details"]); got != `[{"label":"`+wantHeader[i]+`","value":"webapp"}]` {
-			t.Errorf("update %d details %s", i, got)
+		// The question is the card's text alone: a row would show it on
+		// one line.
+		if s["details"] != nil {
+			t.Errorf("update %d details %v", i, s["details"])
 		}
 	}
 	if len(f.notifs) != 0 || f.ended() {

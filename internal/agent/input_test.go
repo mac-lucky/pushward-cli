@@ -11,24 +11,26 @@ func TestSummarize(t *testing.T) {
 	long := strings.Repeat("x", 300)
 	for _, c := range []struct {
 		tool, input string
-		state       string
+		state, text string
 		row         string
 	}{
-		{"Bash", `{"command":"go test ./...\n  -race"}`, "Run: go test ./... -race", `{"label":"Bash","value":"go test ./... -race"}`},
-		{"Bash", `{"command":["bash","-lc","make release"]}`, "Run: make release", `{"label":"Bash","value":"make release"}`},
-		{"Edit", `{"file_path":"/home/u/src/webapp/internal/app.go","old_string":"a","new_string":"b"}`, "Edit internal/app.go", `{"label":"Edit","value":"internal/app.go"}`},
-		{"Write", `{"file_path":"/etc/hosts","content":"secret"}`, "Edit /etc/hosts", `{"label":"Write","value":"/etc/hosts"}`},
-		{"apply_patch", `{"command":"*** Begin Patch\n*** Update File: cmd/main.go\n@@\n-a\n+b\n*** Add File: docs/x.md\n+hi\n*** End Patch"}`, "Edit cmd/main.go and 1 more file", `{"label":"apply_patch","value":"cmd/main.go"}`},
-		{"WebFetch", `{"url":"https://example.com/a","prompt":"read"}`, "WebFetch", `{"label":"WebFetch","value":"https://example.com/a"}`},
-		{"mcp__github__create_pull_request", `{"owner":"me","repo":"r"}`, "mcp__github__create_pull_request", `{"label":"mcp__github__create_p...","value":"{\"owner\":\"me\",\"repo\":\"r\"}"}`},
-		{"Bash", `{"command":"` + long + `"}`, "Run: " + strings.Repeat("x", 248) + "...", `{"label":"Bash","value":"` + strings.Repeat("x", 61) + `..."}`},
-		{"ExitWorktree", `{}`, "ExitWorktree", "null"},
+		{"Bash", `{"command":"go test ./...\n  -race"}`, "Run a command", "Run: go test ./... -race", `{"label":"Bash","value":"go test ./... -race"}`},
+		{"Bash", `{"command":["bash","-lc","make release"]}`, "Run a command", "Run: make release", `{"label":"Bash","value":"make release"}`},
+		{"Edit", `{"file_path":"/home/u/src/webapp/internal/app.go","old_string":"a","new_string":"b"}`, "Edit app.go", "Edit internal/app.go", `{"label":"Edit","value":"internal/app.go"}`},
+		{"Write", `{"file_path":"/etc/hosts","content":"secret"}`, "Edit hosts", "Edit /etc/hosts", `{"label":"Write","value":"/etc/hosts"}`},
+		{"apply_patch", `{"command":"*** Begin Patch\n*** Update File: cmd/main.go\n@@\n-a\n+b\n*** Add File: docs/x.md\n+hi\n*** End Patch"}`, "Edit main.go and 1 more file", "Edit cmd/main.go and 1 more file", `{"label":"apply_patch","value":"cmd/main.go"}`},
+		{"WebFetch", `{"url":"https://example.com/a","prompt":"read"}`, "WebFetch", "WebFetch", `{"label":"WebFetch","value":"https://example.com/a"}`},
+		{"mcp__github__create_pull_request", `{"owner":"me","repo":"r"}`, "mcp__github__create_pull_request", "mcp__github__create_pull_request", `{"label":"mcp__github__create_p...","value":"{\"owner\":\"me\",\"repo\":\"r\"}"}`},
+		{"Bash", `{"command":"` + long + `"}`, "Run a command", "Run: " + strings.Repeat("x", 248) + "...", `{"label":"Bash","value":"` + strings.Repeat("x", 61) + `..."}`},
+		{"Bash", `{}`, "Bash", "Bash", "null"},
+		{"Edit", `{"old_string":"a"}`, "Edit", "Edit", "null"},
+		{"ExitWorktree", `{}`, "ExitWorktree", "ExitWorktree", "null"},
 	} {
 		in := Input{Cwd: "/home/u/src/webapp", ToolName: c.tool, ToolInput: json.RawMessage(c.input)}
 		s := in.summarize()
 		row, _ := json.Marshal(s.row)
-		if s.state != c.state || string(row) != c.row {
-			t.Errorf("%s %s:\n got  %q %s\n want %q %s", c.tool, c.input, s.state, row, c.state, c.row)
+		if s.state != c.state || s.text != c.text || string(row) != c.row {
+			t.Errorf("%s %s:\n got  %q %q %s\n want %q %q %s", c.tool, c.input, s.state, s.text, row, c.state, c.text, c.row)
 		}
 	}
 }

@@ -74,7 +74,7 @@ func TestAgentHookAnswersFromTheCard(t *testing.T) {
 	if len(creates) != 2 || creates[0].Body["slug"] != "agent-key-check" || creates[1].Body["slug"] != slug {
 		t.Fatalf("creates %+v", creates)
 	}
-	if card := sentTo(f, "PATCH", "/activities/"+slug); len(card) != 1 || card[0].Body["content"].(map[string]any)["state"] != "Run: make deploy" {
+	if card := sentTo(f, "PATCH", "/activities/"+slug); len(card) != 1 || card[0].Body["content"].(map[string]any)["state"] != "Run a command" {
 		t.Errorf("card %+v", card)
 	}
 }

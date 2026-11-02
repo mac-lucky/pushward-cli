@@ -39,14 +39,12 @@ func (r *Runner) permission(ctx context.Context, agent Agent, in Input) []byte {
 		opts = append(opts, option{id: "always", title: "Always", label: "Always allow", style: "secondary", icon: "mdi:check-all"})
 	}
 	opts = append(opts, option{id: "deny", title: "Deny", label: "Deny", style: "destructive", icon: "mdi:close", destructive: true})
+	// One row, the tool and what it acts on; the repo is the card's source.
 	var rows []detail
 	if sum.row != nil {
 		rows = append(rows, *sum.row)
 	}
-	if repo := in.repo(); repo != "" {
-		rows = append(rows, detail{Label: "Repo", Value: repo})
-	}
-	rd := round{question: sum.state, title: agent.Name() + " asks", body: sum.state, options: opts, rows: rows}
+	rd := round{question: sum.state, title: agent.Name() + " asks", body: sum.text, options: opts, rows: rows}
 
 	replies, out := r.newAsk(agent, in).run(ctx, []round{rd})
 	switch {
@@ -92,7 +90,7 @@ func (r *Runner) questions(ctx context.Context, in Input) []byte {
 // askQuestions asks the questions in order and returns the answer to each:
 // the full label of the chosen option, or the text typed for Other.
 func (r *Runner) askQuestions(ctx context.Context, agent Agent, in Input, qs []question) ([]string, outcome) {
-	rounds := questionRounds(agent, in.repo(), qs)
+	rounds := questionRounds(agent, qs)
 	replies, out := r.newAsk(agent, in).run(ctx, rounds)
 	if out != answered {
 		return nil, out
@@ -104,7 +102,10 @@ func (r *Runner) askQuestions(ctx context.Context, agent Agent, in Input, qs []q
 	return answers, answered
 }
 
-func questionRounds(agent Agent, repo string, qs []question) []round {
+// questionRounds puts each question on the card as its text alone: a details
+// row would show it on one line, cut short on the Lock Screen, and its value
+// would read like an answer.
+func questionRounds(agent Agent, qs []question) []round {
 	steps := 0
 	if len(qs) >= 2 {
 		steps = len(qs)
@@ -138,13 +139,6 @@ func questionRounds(agent Agent, repo string, qs []question) []round {
 			}
 		}
 		rd.body = cut(strings.Join(body, "\n"), 256)
-		if repo != "" {
-			header := cut(oneLine(q.Header), 24)
-			if header == "" {
-				header = "Question"
-			}
-			rd.rows = []detail{{Label: header, Value: repo}}
-		}
 		rounds[i] = rd
 	}
 	return rounds

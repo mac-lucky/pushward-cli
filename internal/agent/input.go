@@ -115,34 +115,40 @@ type detail struct {
 	Value string `json:"value"`
 }
 
-// summary is what a permission prompt shows: the card's question, and the
-// tool's row with the command or file it acts on.
+// summary is what a permission prompt shows. The card says what the tool
+// wants to do in a few words and names the command or file once, in the
+// tool's row; the notification has no row, so its text carries the command.
 type summary struct {
 	state string
+	text  string
 	row   *detail
 }
 
-// summarize describes a tool call: "Run: <command>" for a shell command,
-// "Edit <file>" for a change to a file, the tool's name for anything else.
+// summarize describes a tool call: "Run a command" for a shell command,
+// "Edit <file name>" for a change to a file, the tool's name for anything
+// else.
 func (in Input) summarize() summary {
 	var args map[string]any
 	_ = json.Unmarshal(in.ToolInput, &args)
 	tool := in.ToolName
-	var state, value string
+	var state, text, value string
 	switch tool {
 	case "Bash":
-		value = shellCommand(args["command"])
-		state = "Run: " + value
+		if value = shellCommand(args["command"]); value != "" {
+			state, text = "Run a command", "Run: "+value
+		}
 	case "Edit", "MultiEdit", "Write", "NotebookEdit":
-		value = in.relative(firstString(args, "file_path", "notebook_path"))
-		state = "Edit " + value
+		if path := firstString(args, "file_path", "notebook_path"); path != "" {
+			value = in.relative(path)
+			state, text = "Edit "+filepath.Base(path), "Edit "+value
+		}
 	case "apply_patch":
-		files := patchFiles(shellCommand(args["command"]))
-		if len(files) > 0 {
+		if files := patchFiles(shellCommand(args["command"])); len(files) > 0 {
 			value = in.relative(files[0])
-			state = "Edit " + value
+			state, text = "Edit "+filepath.Base(files[0]), "Edit "+value
 			if len(files) > 1 {
-				state += " and " + plural(len(files)-1, "more file")
+				more := " and " + plural(len(files)-1, "more file")
+				state, text = state+more, text+more
 			}
 		}
 	default:
@@ -155,7 +161,10 @@ func (in Input) summarize() summary {
 	if state == "" {
 		state = tool
 	}
-	s := summary{state: cut(oneLine(state), 256)}
+	if text == "" {
+		text = state
+	}
+	s := summary{state: cut(oneLine(state), 256), text: cut(oneLine(text), 256)}
 	if value = oneLine(value); value != "" {
 		s.row = &detail{Label: cut(oneLine(tool), 24), Value: cut(value, 64)}
 	}
