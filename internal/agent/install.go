@@ -187,11 +187,14 @@ func (p Plan) Changed() bool {
 	return !bytes.Equal(a.Bytes(), b.Bytes())
 }
 
-// Apply writes the plan, a copy of the file as it was to <file>.bak first.
-// A plan that changes nothing writes nothing.
-func (p Plan) Apply() (backup string, err error) {
+// Apply writes the plan. Before it changes an existing file it copies the
+// file as it was to <file>.bak, unless a .bak is there already: that one is
+// kept, so it stays the file from before the first install rather than the
+// last. It returns the backup's path, "" for a file that did not exist, and
+// whether this call wrote it. A plan that changes nothing writes nothing.
+func (p Plan) Apply() (backup string, wrote bool, err error) {
 	if !p.Changed() {
-		return "", nil
+		return "", false, nil
 	}
 	mode := fs.FileMode(0o600)
 	if p.Before != nil {
@@ -199,13 +202,19 @@ func (p Plan) Apply() (backup string, err error) {
 			mode = info.Mode().Perm()
 		}
 		backup = p.Path + ".bak"
-		if err := writeFile(backup, p.Before, 0o600); err != nil {
-			return "", err
+		switch _, err := os.Lstat(backup); {
+		case errors.Is(err, fs.ErrNotExist):
+			if err := writeFile(backup, p.Before, 0o600); err != nil {
+				return "", false, err
+			}
+			wrote = true
+		case err != nil:
+			return "", false, err
 		}
 	} else if err := os.MkdirAll(filepath.Dir(p.Path), 0o700); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return backup, writeFile(p.Path, p.After, mode)
+	return backup, wrote, writeFile(p.Path, p.After, mode)
 }
 
 // writeFile replaces path atomically.

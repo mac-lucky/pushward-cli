@@ -294,6 +294,13 @@ func TestAgentInstallCommand(t *testing.T) {
 	if b, _ := os.ReadFile(settings); r.code != 0 || string(b) != "{\n  \"model\": \"opus\"\n}\n" {
 		t.Errorf("uninstall: exit %d\n%s", r.code, b)
 	}
+	// The backup is the file from before the first install, not the last.
+	if !strings.Contains(r.stdout, settings+".bak from before is kept") {
+		t.Errorf("uninstall: %s", r.stdout)
+	}
+	if b, _ := os.ReadFile(settings + ".bak"); string(b) != "{\n  \"model\": \"opus\"\n}\n" {
+		t.Errorf("backup:\n%s", b)
+	}
 
 	codex := filepath.Join(dir, "codex", "hooks.json")
 	r = runCLI(t, srv, nil, "", "agent", "install", "codex", "--settings", codex)

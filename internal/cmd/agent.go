@@ -227,15 +227,16 @@ func newAgentInstallCmd(a *App, remove bool) *cobra.Command {
 		Short: prefix + " Claude Code or Codex",
 		Long: `Add the hooks to ~/.claude/settings.json (Claude Code) or
 ~/.codex/hooks.json (Codex), keeping every other setting and hook as it is.
-The file as it was is copied to <file>.bak first. Running it again changes
-nothing. Codex runs a new hook only after you trust it once with /hooks.`,
+The file as it was is copied to <file>.bak first, unless there is a .bak
+already: that one is kept. Running it again changes nothing. Codex runs a
+new hook only after you trust it once with /hooks.`,
 	}
 	if remove {
 		prefix = "Take the PushWard hooks out of"
 		c.Use = "uninstall"
 		c.Short = prefix + " Claude Code or Codex"
 		c.Long = `Remove the hooks agent install added, and nothing else. The file as it
-was is copied to <file>.bak first.`
+was is copied to <file>.bak first, unless there is a .bak already.`
 	}
 	for _, ag := range agents {
 		var dryRun bool
@@ -274,11 +275,11 @@ was is copied to <file>.bak first.`
 					_, err := a.Stdout.Write(plan.After)
 					return err
 				}
-				backup, err := plan.Apply()
+				backup, wrote, err := plan.Apply()
 				if err != nil {
 					return err
 				}
-				a.agentInstalled(ag, plan, backup, remove)
+				a.agentInstalled(ag, plan, backup, wrote, remove)
 				return nil
 			},
 		}
@@ -292,7 +293,7 @@ was is copied to <file>.bak first.`
 	return group(c)
 }
 
-func (a *App) agentInstalled(ag agent.Agent, plan agent.Plan, backup string, removed bool) {
+func (a *App) agentInstalled(ag agent.Agent, plan agent.Plan, backup string, wrote, removed bool) {
 	if a.quiet {
 		return
 	}
@@ -308,8 +309,11 @@ func (a *App) agentInstalled(ag agent.Agent, plan agent.Plan, backup string, rem
 	default:
 		fmt.Fprintf(w, "added the PushWard hooks to %s\n", plan.Path)
 	}
-	if backup != "" {
+	switch {
+	case wrote:
 		fmt.Fprintf(w, "the file as it was is in %s\n", backup)
+	case backup != "":
+		fmt.Fprintf(w, "%s from before is kept as it was\n", backup)
 	}
 	if ag == agent.Codex && !removed {
 		fmt.Fprintln(w, "in Codex, run /hooks once and trust the PushWard hooks: Codex skips a hook until it is trusted")

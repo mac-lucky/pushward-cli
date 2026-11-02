@@ -85,7 +85,7 @@ func install(t *testing.T, path string, agent Agent, command string) Plan {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Apply(); err != nil {
+	if _, _, err := p.Apply(); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -196,10 +196,20 @@ func TestInstallClaude(t *testing.T) {
 		t.Errorf("codex installed %v", events)
 	}
 
-	// A moved binary: the entry is updated in place, not added twice.
-	install(t, path, Claude, "/usr/local/bin/pushward agent hook claude")
+	// A moved binary: the entry is updated in place, not added twice, and
+	// the backup stays the file from before the first install.
+	p, err = PlanInstall(path, Claude, "/usr/local/bin/pushward agent hook claude", DefaultMaxWait)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backup, wrote, err := p.Apply(); err != nil || backup != p.Path+".bak" || wrote {
+		t.Fatalf("reinstall: backup %q, wrote %v, %v", backup, wrote, err)
+	}
 	if got := read(t, path); strings.Count(got, "agent hook claude") != 4 || strings.Contains(got, "/opt/homebrew") {
 		t.Errorf("after a reinstall from another path:\n%s", got)
+	}
+	if read(t, path+".bak") != claudeSettings {
+		t.Error("a reinstall overwrote the first backup")
 	}
 
 	// Uninstall leaves the file as it was before the install.
@@ -207,11 +217,14 @@ func TestInstallClaude(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Apply(); err != nil {
+	if _, _, err := p.Apply(); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, path); got != claudeSettings {
 		t.Errorf("after uninstall:\n%s\nwant:\n%s", got, claudeSettings)
+	}
+	if read(t, path+".bak") != claudeSettings {
+		t.Error("uninstall overwrote the first backup")
 	}
 	if p, _ := PlanUninstall(path, Claude); p.Changed() {
 		t.Error("a second uninstall changed the file")
@@ -243,7 +256,7 @@ func TestInstallCodex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Apply(); err != nil {
+	if _, _, err := p.Apply(); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(hooks, `    ]
@@ -286,7 +299,7 @@ func TestInstallCodex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Apply(); err != nil {
+	if _, _, err := p.Apply(); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, path); got != hooks {
@@ -470,7 +483,7 @@ func TestInstallKeepsAWrappedCommand(t *testing.T) {
 		t.Errorf("the other events lack the hook:\n%s", after)
 	}
 	// Uninstall takes it out all the same.
-	if _, err := p.Apply(); err != nil {
+	if _, _, err := p.Apply(); err != nil {
 		t.Fatal(err)
 	}
 	p, err = PlanUninstall(path, Claude)
@@ -533,7 +546,7 @@ func TestInstallKeepsTheLayout(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := p.Apply(); err != nil {
+			if _, _, err := p.Apply(); err != nil {
 				t.Fatal(err)
 			}
 			if got := read(t, path); got != content {
