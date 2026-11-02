@@ -62,6 +62,14 @@ func TestClaudePermission(t *testing.T) {
 			if len(create) != 1 || create[0].Body["name"] != "Claude Code" {
 				t.Fatalf("creates %+v", create)
 			}
+			// Every prompt has a card of its own, and an ended card counts
+			// toward the account's activity limit until it is deleted.
+			if create[0].Body["ended_ttl"] != float64(60) || create[0].Body["dismissal_ttl"] != float64(0) {
+				t.Errorf("ended_ttl %v, dismissal_ttl %v", create[0].Body["ended_ttl"], create[0].Body["dismissal_ttl"])
+			}
+			if f.probes != 1 {
+				t.Errorf("%d key checks", f.probes)
+			}
 			slug, _ := create[0].Body["slug"].(string)
 			if !regexp.MustCompile(`^agent-[0-9a-f]{8}-[0-9a-f]{8}$`).MatchString(slug) {
 				t.Errorf("slug %q", slug)
@@ -188,6 +196,60 @@ func TestQuestionsStepByStep(t *testing.T) {
 	}
 	if len(f.notifs) != 0 || f.ended() {
 		t.Errorf("the card ends itself after the last answer: %d notifications, ended %v", len(f.notifs), f.ended())
+	}
+	if f.probes != 1 {
+		t.Errorf("%d key checks for one ask", f.probes)
+	}
+}
+
+// A server from before steps ends the card at the first answer: the other
+// questions go out as notifications, and the ended card is left alone.
+func TestServerWithoutSteps(t *testing.T) {
+	f := newFakeAPI()
+	f.noSteps = true
+	f.cardAnswer = answerCard("q1o2", 5*time.Second)
+	f.notifAnswer = func(n int, _ map[string]any) (string, string, time.Duration) {
+		return map[int]string{1: "q2o1", 2: "q3o2"}[n], "", 3 * time.Second
+	}
+	out, logs := run(t, f, away(), nil, Claude, askInput(questionsJSON))
+	if !strings.Contains(out, `"answers":{"Notify the team?":"Email","Ship it today?":"Yes, tag and push it to production now","Which database should we use?":"SQLite"}`) {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	if steps := f.steps(); len(steps) != 1 || steps[0]["step"] != float64(1) {
+		t.Errorf("card updates %+v, want only the first question", steps)
+	}
+	asked := f.asked()
+	if len(asked) != 2 || asked[0]["title"] != "Claude Code asks (2/3)" || asked[1]["title"] != "Claude Code asks (3/3)" {
+		t.Errorf("notifications %+v", asked)
+	}
+	if f.ended() || len(f.retracted()) != 0 {
+		t.Errorf("ended by the agent %v, retracted %v", f.ended(), f.retracted())
+	}
+}
+
+// The first question's notification went out because no device reported
+// the card in time, then the card was answered: it works, so the next
+// questions go to the card alone.
+func TestCardAnswerStopsTheFallback(t *testing.T) {
+	f := newFakeAPI()
+	f.started = 0
+	f.cardAnswer = func(step int) (string, time.Duration) {
+		after := 5 * time.Second
+		if step == 1 {
+			after = 20 * time.Second
+		}
+		return map[int]string{1: "q1o1", 2: "q2o2", 3: "q3o1"}[step], after
+	}
+	out, logs := run(t, f, away(), nil, Claude, askInput(questionsJSON))
+	if !strings.Contains(out, `"answers":{"Notify the team?":"Slack","Ship it today?":"No","Which database should we use?":"Postgres"}`) {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	if asked := f.asked(); len(asked) != 1 || asked[0]["title"] != "Claude Code asks (1/3)" {
+		t.Errorf("notifications %+v, want only the first question's", asked)
+	}
+	slug := f.sent("POST", "/activities")[0].Body["slug"]
+	if r := f.retracted(); len(r) != 1 || r[0] != slug {
+		t.Errorf("retracted %v, want the first question's notification", r)
 	}
 }
 
@@ -418,6 +480,63 @@ func TestCardEndedFallsBackToNotification(t *testing.T) {
 	}
 	if len(f.asked()) != 1 || f.ended() {
 		t.Errorf("%d notifications, card ended by the agent %v", len(f.asked()), f.ended())
+	}
+}
+
+// The card is created but its start is refused: it is deleted, not left on
+// the account, and the prompt goes out as a notification.
+func TestStartRefusedDeletesTheCard(t *testing.T) {
+	f := newFakeAPI()
+	f.startStatus = 429
+	f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "deny", "", time.Second }
+	out, logs := run(t, f, away(), nil, Claude, claudePermission)
+	if out != denyOut {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	slug := f.sent("POST", "/activities")[0].Body["slug"]
+	if d := f.sent("DELETE", "/activities/"); len(d) != 1 || d[0].Path != "/activities/"+slug.(string) {
+		t.Errorf("deletes %+v", d)
+	}
+	if f.act != nil || len(f.asked()) != 1 || f.ended() {
+		t.Errorf("card left %v, %d notifications, ended %v", f.act != nil, len(f.asked()), f.ended())
+	}
+}
+
+// An organization's key reaches other members: nothing is sent, and the
+// prompt stays in the terminal.
+func TestOrgKeySendsNothing(t *testing.T) {
+	stop := `{"session_id":"s","cwd":"/w","hook_event_name":"Stop","last_assistant_message":"done"}`
+	for name, c := range map[string]struct {
+		agent   Agent
+		in, out string
+	}{
+		"permission": {Claude, claudePermission, ""},
+		"codex":      {Codex, codexPermission, ""},
+		"questions":  {Claude, askInput(questionsJSON), ""},
+		"multi":      {Claude, askInput(strings.Replace(questionsJSON, `"multiSelect":false}]`, `"multiSelect":true}]`, 1)), ""},
+		"stop":       {Claude, stop, ""},
+		"codex stop": {Codex, stop, "{}\n"},
+	} {
+		f := newFakeAPI()
+		f.org = true
+		f.cardAnswer = answerCard("allow", time.Second)
+		out, logs := run(t, f, away(), nil, c.agent, c.in)
+		if out != c.out || len(f.calls) != 0 || f.probes != 1 {
+			t.Errorf("%s: stdout %q, %d requests, %d key checks", name, out, len(f.calls), f.probes)
+		}
+		if !strings.Contains(logs, "organization's key") {
+			t.Errorf("%s: log %s", name, logs)
+		}
+	}
+	f := newFakeAPI()
+	f.org = true
+	var err error
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := newRunner(f, away())
+		_, err = r.Test(context.Background(), "")
+	})
+	if err != ErrOrgKey || len(f.calls) != 0 {
+		t.Errorf("test: %v, %d requests", err, len(f.calls))
 	}
 }
 

@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/mac-lucky/pushward-cli/internal/agent"
-	"github.com/mac-lucky/pushward-cli/internal/api"
 )
 
 // hookAnnotation marks the commands a coding agent runs as its hooks. They
@@ -49,7 +48,8 @@ finished notices go out only while you are away.
   pushward agent test
 
 The command, file or question shown on the card is sent to PushWard as the
-card's text.`,
+card's text. The hooks need a personal key: anyone the card reaches can
+answer it, so with an organization's key they send nothing.`,
 	}
 	c.AddCommand(
 		newAgentHookCmd(a),
@@ -194,22 +194,13 @@ func (a *App) agentRunner(opts agent.Options, logger *log.Logger) *agent.Runner 
 		if op != "createNotification" {
 			return send(ctx, op, params, query, body)
 		}
-		// Sealed with the encryption key when one is set, as notify does.
-		// An organization key PushWard does not encrypt for sends it
-		// readable, like the card it stands in for.
+		// Sealed with the encryption key when one is set, as notify does. A
+		// sealed send the server refuses is not sent again readable.
 		sealed := maps.Clone(body)
-		kid, err := a.encryptBody(sealed, false)
-		if err != nil {
+		if _, err := a.encryptBody(sealed, false); err != nil {
 			return nil, err
 		}
-		if kid != "" {
-			out, err := send(ctx, op, params, query, sealed)
-			var ae *api.Error
-			if !errors.As(err, &ae) || ae.Code != api.CodeEncryptionUnavailable {
-				return out, err
-			}
-		}
-		return send(ctx, op, params, query, body)
+		return send(ctx, op, params, query, sealed)
 	}
 	return &agent.Runner{Call: call, Idle: agent.SystemIdle(), Log: logger, Opts: opts}
 }
@@ -314,9 +305,11 @@ func newAgentStatusCmd(a *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Check the key, the desk check and which hooks are installed",
-		Long: `Print whether a key is set and works, whether you count as at the desk
-right now, and which agents have the hooks. Exits 3 when the key is
-missing or refused.`,
+		Long: `Print whether a key is set and works (an organization's key does not
+work for the hooks), whether you count as at the desk right now, going by
+the PUSHWARD_AGENT_DESK and PUSHWARD_AGENT_DESK_IDLE the hook reads too,
+and which agents have the hooks. Exits 3 when the key is missing or
+refused.`,
 		Args: checkArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			w := a.Stdout
@@ -329,13 +322,17 @@ missing or refused.`,
 					src = "$PUSHWARD_API_TOKEN"
 				}
 				_, keyErr = a.call(cmd.Context(), "getMe", nil, nil, nil)
-				if keyErr != nil {
+				switch {
+				case keyErr != nil:
 					fmt.Fprintf(w, "key      from %s, refused: %v\n", src, keyErr)
-				} else {
+				case errors.Is(a.agentRunner(agent.DefaultOptions(), log.New(io.Discard, "", 0)).CheckKey(cmd.Context()), agent.ErrOrgKey):
+					fmt.Fprintf(w, "key      from %s, an organization's key: the hooks need a personal one and send nothing with it\n", src)
+				default:
 					fmt.Fprintf(w, "key      from %s, works\n", src)
 				}
 			}
-			fmt.Fprintf(w, "desk     %s\n", deskState(cmd.Context()))
+			opts, err := a.hookOptions()
+			fmt.Fprintf(w, "desk     %s\n", deskState(cmd.Context(), opts, err))
 			for _, ag := range agents {
 				path, err := agent.DefaultSettings(ag)
 				if err != nil {
@@ -357,7 +354,27 @@ missing or refused.`,
 	}
 }
 
-func deskState(ctx context.Context) string {
+// hookOptions are the options a hook gets from the environment: the
+// defaults, changed by PUSHWARD_AGENT_<FLAG> the way the hook reads them.
+func (a *App) hookOptions() (agent.Options, error) {
+	var f agentFlags
+	c := &cobra.Command{Use: "hook"}
+	f.register(c, true)
+	if err := applyAgentEnv(c, a.Getenv); err != nil {
+		return f.opts, err
+	}
+	return f.opts, f.opts.Validate()
+}
+
+func deskState(ctx context.Context, opts agent.Options, optsErr error) string {
+	switch {
+	case optsErr != nil:
+		return fmt.Sprintf("%v: the hook leaves every prompt in the terminal", optsErr)
+	case opts.Desk == "desk":
+		return "at the desk (PUSHWARD_AGENT_DESK=desk): prompts stay in the terminal"
+	case opts.Desk == "away":
+		return "away (PUSHWARD_AGENT_DESK=away): prompts go to the phone"
+	}
 	idle := agent.SystemIdle()
 	if idle == nil {
 		return "no idle time to read here: every prompt goes to the phone"
@@ -366,7 +383,7 @@ func deskState(ctx context.Context) string {
 	switch {
 	case err != nil:
 		return "could not read the idle time: prompts go to the phone"
-	case d < agent.DefaultDeskIdle:
+	case d < opts.DeskIdle:
 		return fmt.Sprintf("at the desk (idle %s): prompts stay in the terminal", d.Round(time.Second))
 	}
 	return fmt.Sprintf("away (idle %s): prompts go to the phone", d.Round(time.Second))

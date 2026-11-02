@@ -33,6 +33,8 @@ const (
 	cleanupWithin = 2 * time.Second
 	// threadID groups the agent's notifications on the devices.
 	threadID = "pushward-agent"
+	// endedTTL is how long, in seconds, an ended card stays on the account.
+	endedTTL = 60
 )
 
 type outcome int
@@ -112,7 +114,8 @@ type event struct {
 	from  surface
 	ok    bool
 	reply reply
-	// ended: the card is gone from the server, so there is nothing to end.
+	// ended: the card has ended on the server, or is gone, so there is
+	// nothing to end.
 	ended bool
 }
 
@@ -154,6 +157,9 @@ func (r *Runner) newAsk(agent Agent, in Input) *ask {
 // run asks the rounds in order. It returns a reply per round, or why it
 // stopped, and leaves no card or notification behind that still asks.
 func (a *ask) run(ctx context.Context, rounds []round) ([]reply, outcome) {
+	if a.r.CheckKey(ctx) != nil {
+		return nil, handedBack
+	}
 	defer a.withdraw(ctx)
 	replies := make([]reply, 0, len(rounds))
 	for _, rd := range rounds {
@@ -290,10 +296,17 @@ func (a *ask) won(ev event, rd round) {
 	switch ev.from {
 	case fromCard:
 		a.r.logf("%s: answered on the card", a.slug)
-		a.confirmed = true
-		if rd.final() {
+		// The card reaches a device, so later rounds need no notification.
+		a.confirmed, a.alsoNotify = true, false
+		switch {
+		case rd.final():
 			// The server ends the card after its last answer.
 			a.cardUp = false
+		case ev.ended:
+			// A server without steps ends the card at the first answer:
+			// the questions left go out as notifications.
+			a.r.logf("%s: the card ended after question %d of %d", a.slug, rd.step, rd.steps)
+			a.cardUp, a.noCard = false, true
 		}
 	case fromNotification:
 		a.r.logf("%s: answered in the notification", a.slug)
@@ -361,9 +374,11 @@ func (a *ask) start(ctx context.Context, rd round) error {
 		"slug": a.slug,
 		"name": a.agent.Name(),
 		// Gone from the Lock Screen as soon as it ends (the server shows an
-		// answer for a few seconds first), deleted an hour later.
+		// answer for a few seconds first), and deleted a minute later:
+		// every prompt has a slug of its own, and ended activities count
+		// toward the account's activity limit until they are deleted.
 		"dismissal_ttl": 0,
-		"ended_ttl":     3600,
+		"ended_ttl":     endedTTL,
 	}
 	body, err := a.r.Call(ctx, "createActivity", nil, nil, create)
 	if err != nil {
@@ -380,10 +395,23 @@ func (a *ask) start(ctx context.Context, rd round) error {
 		}
 	}
 	if _, err := a.r.Call(ctx, "updateActivity", params, nil, map[string]any{"state": "ongoing", "content": a.content(rd)}); err != nil {
+		// The created card would stay on the account (an end schedules its
+		// deletion, a create does not), or on the Lock Screen if the update
+		// did go through: take it back out.
+		a.discard(ctx)
 		return err
 	}
 	a.cardUp, a.cardSince = true, time.Now()
 	return nil
+}
+
+// discard deletes the card, which also takes it off the devices, with the
+// cleanup budget.
+func (a *ask) discard(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWithin)
+	defer cancel()
+	_, err := a.r.Call(ctx, "deleteActivity", map[string]string{"slug": a.slug}, nil, nil)
+	a.r.logf("%s: deleted the card: %s", a.slug, describe(err))
 }
 
 func hasAnswer(activity []byte) bool {
@@ -524,7 +552,7 @@ func (a *ask) watchCard(ctx context.Context, ids map[string]bool) event {
 			return gone(false), true
 		}
 		if ans := act.Content.Answer; ans != nil && ids[ans.Option] {
-			return event{from: fromCard, ok: true, reply: reply{option: ans.Option}}, true
+			return event{from: fromCard, ok: true, reply: reply{option: ans.Option}, ended: act.State == "ended"}, true
 		}
 		switch act.State {
 		case "ended":

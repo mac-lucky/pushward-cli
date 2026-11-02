@@ -9,14 +9,13 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/mac-lucky/pushward-cli/internal/api"
@@ -109,6 +108,9 @@ type Runner struct {
 	// Log receives ids and statuses; nil logs nothing.
 	Log  *log.Logger
 	Opts Options
+
+	keyOnce sync.Once
+	keyErr  error
 }
 
 func (r *Runner) logf(format string, args ...any) {
@@ -175,11 +177,9 @@ func (r *Runner) Hook(ctx context.Context, agent Agent, stdin io.Reader) []byte 
 // encode writes a hook decision as one line of JSON. Quotes and angle
 // brackets in echoed text stay as they are.
 func encode(v any) []byte {
-	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	b, err := marshal(v)
+	if err != nil {
 		return nil
 	}
-	return b.Bytes()
+	return append(b, '\n')
 }

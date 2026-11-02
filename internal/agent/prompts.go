@@ -256,6 +256,9 @@ type Answer struct {
 // Test asks SampleQuestions the way a Claude Code question is asked, and
 // returns the answers. cwd names the card's source.
 func (r *Runner) Test(ctx context.Context, cwd string) ([]Answer, error) {
+	if err := r.CheckKey(ctx); err != nil {
+		return nil, err
+	}
 	qs := make([]question, len(SampleQuestions))
 	for i, s := range SampleQuestions {
 		qs[i] = question{Question: s.Question, Header: s.Header}

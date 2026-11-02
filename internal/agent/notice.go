@@ -25,7 +25,7 @@ func (r *Runner) finished(ctx context.Context, agent Agent, in Input) {
 // desk unless --notices always. A session's notices share a collapse id, so
 // the newest replaces the one before.
 func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback string) {
-	if r.Opts.Notices == "off" || (r.Opts.Notices != "always" && r.atDesk(ctx)) {
+	if r.Opts.Notices == "off" || (r.Opts.Notices != "always" && r.atDesk(ctx)) || r.CheckKey(ctx) != nil {
 		return
 	}
 	body := cut(oneLine(text), 200)

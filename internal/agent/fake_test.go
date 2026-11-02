@@ -56,6 +56,15 @@ type fakeAPI struct {
 	waitLimit bool
 	// status answers every request with it, when set.
 	status int
+	// org makes the key an organization's: the key check is refused as an
+	// invalid target rather than one a personal key cannot have.
+	org bool
+	// probes counts the key checks, which calls leaves out.
+	probes int
+	// startStatus, when set, refuses the PATCH that starts the card.
+	startStatus int
+	// noSteps is a server that predates steps: any answer ends the card.
+	noSteps bool
 
 	act    *fakeActivity
 	notifs []*fakeNotification
@@ -97,7 +106,11 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Lock()
-	f.calls = append(f.calls, c)
+	if probe(c) {
+		f.probes++
+	} else {
+		f.calls = append(f.calls, c)
+	}
 	f.mu.Unlock()
 	status, body := f.route(r.Context(), c)
 	w.Header().Set("Content-Type", "application/json")
@@ -122,6 +135,12 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 		if f.createStatus != 0 {
 			return problem(f.createStatus, "plan.required", f.createDetail)
 		}
+		if probe(c) {
+			if f.org {
+				return problem(422, "org.target_invalid", "target must name at least one group, tag or member")
+			}
+			return problem(422, codeTargetUnavailable, "target is for organization keys")
+		}
 		if f.act == nil {
 			f.act = &fakeActivity{state: "ongoing", content: map[string]any{}, created: time.Now()}
 			if f.existing != "" {
@@ -134,6 +153,9 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 	case c.Method == "PATCH" && strings.HasPrefix(c.Path, "/activities/"):
 		if f.act == nil {
 			return problem(404, "not_found", "no activity")
+		}
+		if f.startStatus != 0 && c.Body["state"] == "ongoing" {
+			return problem(f.startStatus, api.CodeQuotaExceeded, "scripted")
 		}
 		if s, ok := c.Body["state"].(string); ok {
 			f.act.state = s
@@ -255,7 +277,7 @@ func (f *fakeAPI) settleCard() time.Time {
 	}
 	a.content["answer"] = map[string]any{"option": opt, "by": "user", "at": time.Now().Unix()}
 	count, _ := a.content["step_count"].(float64)
-	if step == 0 || step >= count {
+	if step == 0 || step >= count || f.noSteps {
 		a.state = "ended"
 	}
 	return time.Time{}
@@ -302,6 +324,11 @@ func (f *fakeAPI) activityJSON() map[string]any {
 		out["devices_started"] = f.started
 	}
 	return out
+}
+
+// probe reports whether c is the key check: a create with a target.
+func probe(c call) bool {
+	return c.Method == "POST" && c.Path == "/activities" && c.Body["target"] != nil
 }
 
 func sameJSON(a, b any) bool {
