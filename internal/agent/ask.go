@@ -555,7 +555,13 @@ func (a *ask) notify(ctx context.Context, rd round) (string, bool) {
 	}
 	actions := make([]map[string]any, 0, min(len(rd.options), most)+1)
 	for _, o := range rd.options[:min(len(rd.options), most)] {
-		m := map[string]any{"id": o.id, "title": cut(oneLine(o.label), 64)}
+		// A blank label gets the card's "Option N": the server refuses an
+		// action with no title.
+		title := cut(oneLine(o.label), 64)
+		if title == "" {
+			title = o.title
+		}
+		m := map[string]any{"id": o.id, "title": title}
 		if o.destructive {
 			m["destructive"] = true
 		}

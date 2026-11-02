@@ -513,6 +513,32 @@ func TestNotificationAnswersWithTextAndStrayActions(t *testing.T) {
 	}
 }
 
+// An option with a blank label is "Option N" on the card and in the
+// notification, which the server would refuse with an empty action title.
+func TestBlankOptionLabels(t *testing.T) {
+	q := `[{"question":"Which one?","header":"Pick","options":[{"label":"  ","description":""},{"label":"Second","description":""},{"label":"","description":""}],"multiSelect":false}]`
+	f := newFakeAPI()
+	f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "q1o2", "", time.Second }
+	o := away()
+	o.Via = "notification"
+	out, _ := run(t, f, o, nil, Claude, askInput(q))
+	if !strings.Contains(out, `"answers":{"Which one?":"Second"}`) {
+		t.Fatalf("stdout %s", out)
+	}
+	if got := mustJSON(t, f.asked()[0]["actions"]); !strings.HasPrefix(got, `[{"id":"q1o1","title":"Option 1"},{"id":"q1o2","title":"Second"},{"id":"q1o3","title":"Option 3"},`) {
+		t.Errorf("actions %s", got)
+	}
+
+	f = newFakeAPI()
+	f.cardAnswer = answerCard("q1o1", time.Second)
+	if out, _ := run(t, f, away(), nil, Claude, askInput(q)); !strings.Contains(out, `"answers":{"Which one?":"  "}`) {
+		t.Errorf("stdout %s", out)
+	}
+	if got := mustJSON(t, f.steps()[0]["options"]); !strings.Contains(got, `"title":"Option 1"`) || !strings.Contains(got, `"title":"Option 3"`) {
+		t.Errorf("card options %s", got)
+	}
+}
+
 // A question with more options than a card has buttons goes out as a
 // notification; the card carries the questions around it.
 func TestQuestionTooWideForTheCard(t *testing.T) {
