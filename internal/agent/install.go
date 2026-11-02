@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -93,6 +94,9 @@ type entry struct {
 	timeout int
 	// async hooks run in the background; they only send notices.
 	async bool
+	// was lists matchers earlier versions wrote for the event. A group of
+	// ours with one of them gets the current matcher on install.
+	was []string
 }
 
 // entries are the hooks for agent. The prompt hooks may wait up to maxWait
@@ -108,7 +112,9 @@ func entries(agent Agent, maxWait time.Duration) []entry {
 	return []entry{
 		{event: "PermissionRequest", matcher: "*", timeout: wait},
 		{event: "PreToolUse", matcher: "AskUserQuestion", timeout: wait},
-		{event: "Notification", matcher: "idle_prompt|agent_needs_input", async: true},
+		// Not idle_prompt: it comes about a minute after Stop with the same
+		// collapse id, and its generic text would replace the finished notice.
+		{event: "Notification", matcher: "agent_needs_input", async: true, was: []string{"idle_prompt|agent_needs_input"}},
 		{event: "Stop", async: true},
 	}
 }
@@ -357,6 +363,9 @@ func PlanInstall(path string, agent Agent, command string, maxWait time.Duration
 		if !found {
 			groups = append(groups, e.group(command))
 		}
+		if groups, err = rematch(groups, agent, e); err != nil {
+			return Plan{}, err
+		}
 		raw, err := marshal(groups)
 		if err != nil {
 			return Plan{}, err
@@ -364,6 +373,39 @@ func PlanInstall(path string, agent Agent, command string, maxWait time.Duration
 		s.hooks.set(e.event, raw)
 	}
 	return s.plan()
+}
+
+// rematch gives the groups of ours that still carry a matcher an earlier
+// version wrote the entry's current one. A group that also holds someone
+// else's handler keeps its matcher, which that handler may rely on.
+func rematch(groups []json.RawMessage, agent Agent, e entry) ([]json.RawMessage, error) {
+	if len(e.was) == 0 {
+		return groups, nil
+	}
+	for i, g := range groups {
+		obj, err := parseObject(g)
+		if err != nil {
+			continue
+		}
+		var matcher string
+		if raw, ok := obj.get("matcher"); !ok || json.Unmarshal(raw, &matcher) != nil || !slices.Contains(e.was, matcher) {
+			continue
+		}
+		raw, _ := obj.get("hooks")
+		handlers, err := array(raw)
+		if err != nil || len(handlers) == 0 || slices.ContainsFunc(handlers, func(h json.RawMessage) bool { return !ours(h, agent) }) {
+			continue
+		}
+		m, err := marshal(e.matcher)
+		if err != nil {
+			return nil, err
+		}
+		obj.set("matcher", m)
+		if groups[i], err = obj.MarshalJSON(); err != nil {
+			return nil, err
+		}
+	}
+	return groups, nil
 }
 
 // PlanUninstall takes agent's hooks out of the settings file at path, and

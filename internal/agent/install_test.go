@@ -160,7 +160,7 @@ func TestInstallClaude(t *testing.T) {
     ],
     "Notification": [
       {
-        "matcher": "idle_prompt|agent_needs_input",
+        "matcher": "agent_needs_input",
         "hooks": [
           {
             "type": "command",
@@ -387,6 +387,52 @@ func TestStablePath(t *testing.T) {
 	}
 	if got := stablePath(keg); got != link {
 		t.Errorf("stablePath = %s, want the bin link %s", got, link)
+	}
+}
+
+// An install from before idle_prompt was dropped gets the new matcher, once;
+// a group that also runs someone else's hook keeps the matcher it has.
+func TestInstallUpdatesTheOldMatcher(t *testing.T) {
+	path := writeSettings(t, "{}\n")
+	install(t, path, Claude, claudeCommand)
+	current := read(t, path)
+	old := strings.Replace(current, `"matcher": "agent_needs_input"`, `"matcher": "idle_prompt|agent_needs_input"`, 1)
+	if old == current {
+		t.Fatal("no Notification matcher to age")
+	}
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if p := install(t, path, Claude, claudeCommand); !p.Changed() || read(t, path) != current {
+		t.Fatalf("after install over the old matcher:\n%s\nwant:\n%s", read(t, path), current)
+	}
+	if p := install(t, path, Claude, claudeCommand); p.Changed() {
+		t.Errorf("a second install changed the file:\n%s", p.After)
+	}
+
+	shared := strings.Replace(old, `"command": "`+claudeCommand+`",
+            "async": true
+          }
+        ]
+      }
+    ]`, `"command": "`+claudeCommand+`",
+            "async": true
+          },
+          {
+            "type": "command",
+            "command": "~/bin/idle.sh"
+          }
+        ]
+      }
+    ]`, 1)
+	if shared == old {
+		t.Fatal("no Notification group to share")
+	}
+	if err := os.WriteFile(path, []byte(shared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if p := install(t, path, Claude, claudeCommand); p.Changed() {
+		t.Errorf("install changed a group it shares with another hook:\n%s", p.After)
 	}
 }
 

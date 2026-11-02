@@ -552,7 +552,7 @@ func TestOrgKeySendsNothing(t *testing.T) {
 // check finds it out and nothing is sent.
 func TestOrgKeyWithoutActivitiesSendsNothing(t *testing.T) {
 	stop := `{"session_id":"s","cwd":"/w","hook_event_name":"Stop","last_assistant_message":"done"}`
-	notice := `{"session_id":"s","hook_event_name":"Notification","message":"waiting","notification_type":"idle_prompt"}`
+	notice := `{"session_id":"s","hook_event_name":"Notification","message":"waiting","notification_type":"agent_needs_input"}`
 	for name, c := range map[string]struct {
 		agent   Agent
 		in, out string
@@ -769,7 +769,9 @@ func TestNotices(t *testing.T) {
 		t.Errorf("Codex Stop: %q %+v", out, f.notices())
 	}
 
-	for typ, want := range map[string]int{"idle_prompt": 1, "agent_needs_input": 1, "permission_prompt": 0, "auth_success": 0} {
+	// idle_prompt comes a minute after Stop, which already sent a notice
+	// with the same collapse id; an older install still sends it.
+	for typ, want := range map[string]int{"idle_prompt": 0, "agent_needs_input": 1, "permission_prompt": 0, "auth_success": 0} {
 		f = newFakeAPI()
 		run(t, f, away(), nil, Claude, `{"session_id":"s","hook_event_name":"Notification","message":"Claude is waiting for your input","notification_type":"`+typ+`"}`)
 		if got := len(f.notices()); got != want {

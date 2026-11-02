@@ -2,12 +2,13 @@ package agent
 
 import "context"
 
-// needsInput sends a notice for the Claude Code notifications that mean the
-// session waits on the user. A permission prompt is not one of them: the
-// prompt itself goes to the phone.
+// needsInput sends a notice when a background session starts waiting on the
+// user. A permission prompt is not one: the prompt itself goes to the phone.
+// Neither is idle_prompt, which an older install still sends: it comes about
+// a minute after Stop, and with the same collapse id its generic text would
+// replace the finished notice and push a second time.
 func (r *Runner) needsInput(ctx context.Context, in Input) {
-	switch in.NotificationType {
-	case "idle_prompt", "agent_needs_input":
+	if in.NotificationType == "agent_needs_input" {
 		r.notice(ctx, in, Claude.Name()+" needs you", in.Message, "Waiting for your input")
 	}
 }
