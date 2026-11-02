@@ -158,7 +158,9 @@ func (a *App) runHook(cmd *cobra.Command, ag agent.Agent, f *agentFlags) {
 		logger.Printf("%v", err)
 		return
 	}
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	// Closing the terminal tab sends SIGHUP: end the card and retract the
+	// notification on the way out, and exit 0 like any other way out.
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	if out := a.agentRunner(f.opts, logger).Hook(ctx, ag, a.Stdin); len(out) > 0 {
 		_, _ = a.Stdout.Write(out)
@@ -416,7 +418,7 @@ The desk check is skipped.
 			if _, err := a.keyed(); err != nil {
 				return err
 			}
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 			defer stop()
 			var logw io.Writer = a.Stderr
 			if a.quiet {
