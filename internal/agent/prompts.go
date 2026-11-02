@@ -36,7 +36,11 @@ func (r *Runner) permission(ctx context.Context, agent Agent, in Input) []byte {
 	var always json.RawMessage
 	if agent == Claude && len(in.Suggestions) > 0 {
 		always = in.Suggestions[0]
-		opts = append(opts, option{id: "always", title: "Always", label: "Always allow", style: "secondary", icon: "mdi:check-all"})
+		title, label := "Always", "Always allow"
+		if sessionOnly(always) {
+			title, label = "This session", "Allow for this session"
+		}
+		opts = append(opts, option{id: "always", title: title, label: label, style: "secondary", icon: "mdi:check-all"})
 	}
 	opts = append(opts, option{id: "deny", title: "Deny", label: "Deny", style: "destructive", icon: "mdi:close", destructive: true})
 	// One row, the tool and what it acts on; the repo is the card's source.
@@ -54,6 +58,17 @@ func (r *Runner) permission(ctx context.Context, agent Agent, in Input) []byte {
 		return permissionDenied(timeoutMessage)
 	}
 	return nil
+}
+
+// sessionOnly reports whether a permission update lasts only for the
+// session: its destination is "session", as for the setMode acceptEdits
+// Claude Code suggests for a file edit. One written to a settings file
+// (addRules to localSettings, say) lasts, and keeps "Always".
+func sessionOnly(update json.RawMessage) bool {
+	var u struct {
+		Destination string `json:"destination"`
+	}
+	return json.Unmarshal(update, &u) == nil && u.Destination == "session"
 }
 
 // questions answers Claude's AskUserQuestion from PreToolUse: one card walks

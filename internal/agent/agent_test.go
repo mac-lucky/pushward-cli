@@ -120,6 +120,35 @@ func TestClaudePermissionNoSuggestion(t *testing.T) {
 	}
 }
 
+// A suggestion that lasts only for the session (Claude Code's setMode
+// acceptEdits for a file edit) is offered as "This session", not "Always".
+func TestClaudePermissionSessionSuggestion(t *testing.T) {
+	const mode = `{"type":"setMode","mode":"acceptEdits","destination":"session"}`
+	in := `{"session_id":"sess-1","cwd":"/home/u/src/webapp","hook_event_name":"PermissionRequest","tool_name":"Edit","tool_input":{"file_path":"/home/u/src/webapp/internal/app.go","old_string":"a","new_string":"b"},"permission_suggestions":[` + mode + `]}`
+	f := newFakeAPI()
+	f.cardAnswer = answerCard("always", time.Second)
+	out, _ := run(t, f, away(), nil, Claude, in)
+	if want := `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedPermissions":[` + mode + `]}}}` + "\n"; out != want {
+		t.Fatalf("stdout\n got  %s\n want %s", out, want)
+	}
+	c := f.steps()[0]
+	if got := mustJSON(t, c["options"]); !strings.Contains(got, `{"icon":"mdi:check-all","id":"always","style":"secondary","title":"This session"}`) {
+		t.Errorf("options %s", got)
+	}
+	if c["state"] != "Edit app.go" || mustJSON(t, c["details"]) != `[{"label":"Edit","value":"internal/app.go"}]` {
+		t.Errorf("state %v, details %v", c["state"], c["details"])
+	}
+
+	f = newFakeAPI()
+	f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "deny", "", time.Second }
+	o := away()
+	o.Via = "notification"
+	run(t, f, o, nil, Claude, in)
+	if got := mustJSON(t, f.asked()[0]["actions"]); got != `[{"id":"allow","title":"Allow"},{"id":"always","title":"Allow for this session"},{"destructive":true,"id":"deny","title":"Deny"}]` {
+		t.Errorf("actions %s", got)
+	}
+}
+
 func TestCodexPermission(t *testing.T) {
 	for option, want := range map[string]string{"allow": allowOut, "deny": denyOut} {
 		t.Run(option, func(t *testing.T) {
