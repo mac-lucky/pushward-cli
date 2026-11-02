@@ -282,8 +282,10 @@ pushward agent uninstall claude
 Install keeps the other hooks in the settings file and writes a `.bak` copy first. After
 `pushward agent install codex`, tell the user to trust the new hooks once with `/hooks` in
 Codex. `pushward agent status` shows whether the key works, whether the Mac counts as at
-the desk right now, and which hooks are in place. Never run `pushward agent hook` yourself:
-the agent runs it with a JSON prompt on stdin. Needs CLI 1.8.0.
+the desk right now, and which hooks are in place. The hooks need a personal key: with an
+organization's key they send nothing, because other members would get the card and could
+answer it. Never run `pushward agent hook` yourself: the agent runs it with a JSON prompt on
+stdin. Needs CLI 1.8.0.
 
 With the hook installed in Claude Code, a question you ask with AskUserQuestion already reaches
 their phone when they are away, so it needs no `notify --action` of its own.
