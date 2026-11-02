@@ -389,3 +389,110 @@ func TestStablePath(t *testing.T) {
 		t.Errorf("stablePath = %s, want the bin link %s", got, link)
 	}
 }
+
+// A hook of ours the user runs through another command keeps their command:
+// install does not put the bare one back in its place.
+func TestInstallKeepsAWrappedCommand(t *testing.T) {
+	const wrappedCmd = "op run --env-file ~/.pushward.env -- /opt/homebrew/bin/pushward agent hook claude"
+	content := `{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "` + wrappedCmd + `",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
+  }
+}
+`
+	path := writeSettings(t, content)
+	p, err := PlanInstall(path, Claude, claudeCommand+" --max-wait 40m0s", 40*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := string(p.After)
+	if !strings.HasPrefix(after, content[:strings.Index(content, "    ]\n  }")]) || strings.Count(after, "agent hook claude") != 4 {
+		t.Errorf("after install:\n%s", after)
+	}
+	if strings.Count(after, `"command": "`+claudeCommand+` --max-wait 40m0s"`) != 3 {
+		t.Errorf("the other events lack the hook:\n%s", after)
+	}
+	// Uninstall takes it out all the same.
+	if _, err := p.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	p, err = PlanUninstall(path, Claude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(p.After), "agent hook") {
+		t.Errorf("after uninstall:\n%s", p.After)
+	}
+	for cmd, want := range map[string]bool{
+		claudeCommand:               false,
+		"pushward agent hook codex": false,
+		"'/Users/a b/bin/pushward' agent hook claude --max-wait 1h0m0s": false,
+		`'/tmp/it'\''s/pushward' agent hook claude`:                     false,
+		wrappedCmd: true,
+		"PUSHWARD_AGENT_DESK=away pushward agent hook claude": true,
+		claudeCommand + " --on-timeout deny":                  true,
+	} {
+		h, _ := marshal(map[string]string{"command": cmd})
+		if got := wrapped(h); got != want {
+			t.Errorf("wrapped(%q) = %v", cmd, got)
+		}
+	}
+}
+
+// A file in another layout keeps it, so uninstall gives back its bytes.
+func TestInstallKeepsTheLayout(t *testing.T) {
+	four := strings.ReplaceAll(claudeSettings, "  ", "    ")
+	tabs := strings.ReplaceAll(claudeSettings, "  ", "\t")
+	for name, content := range map[string]string{
+		"four spaces": four,
+		"tabs":        tabs,
+		"no newline":  strings.TrimSuffix(claudeSettings, "\n"),
+		"one line":    `{"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"~/bin/done.sh"}]}]}}`,
+		"empty":       "{}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeSettings(t, content)
+			install(t, path, Claude, claudeCommand)
+			got := read(t, path)
+			switch name {
+			case "four spaces":
+				if !strings.Contains(got, "\n"+strings.Repeat(" ", 16)+"\"matcher\": \"AskUserQuestion\",\n") {
+					t.Errorf("not four spaces:\n%s", got)
+				}
+			case "tabs":
+				if !strings.Contains(got, "\n\t\t\t\t\"matcher\": \"AskUserQuestion\",\n") {
+					t.Errorf("not tabs:\n%s", got)
+				}
+			case "one line":
+				if strings.Contains(got, "\n") {
+					t.Errorf("not one line:\n%s", got)
+				}
+			case "empty":
+				if !strings.HasPrefix(got, "{\n  \"hooks\": {\n    \"PermissionRequest\": [\n") {
+					t.Errorf("not two spaces:\n%s", got)
+				}
+			}
+			p, err := PlanUninstall(path, Claude)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Apply(); err != nil {
+				t.Fatal(err)
+			}
+			if got := read(t, path); got != content {
+				t.Errorf("after uninstall:\n%q\nwant:\n%q", got, content)
+			}
+		})
+	}
+}

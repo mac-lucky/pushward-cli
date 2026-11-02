@@ -3,7 +3,8 @@ package agent
 // Installing the hooks: entries merged into Claude Code's settings.json or
 // Codex's hooks.json, next to whatever hooks are there already. Our entries
 // are the ones whose command runs "agent hook <agent>"; uninstall takes out
-// those and nothing else.
+// those and nothing else. One whose command the user wrapped in another
+// (op run, env) is left as it is by install.
 
 import (
 	"bytes"
@@ -140,10 +141,25 @@ func (e entry) group(command string) json.RawMessage {
 
 // ours reports whether a hook handler runs this integration for agent.
 func ours(handler json.RawMessage, agent Agent) bool {
+	return strings.Contains(commandOf(handler), " agent hook "+string(agent))
+}
+
+func commandOf(handler json.RawMessage) string {
 	var h struct {
 		Command string `json:"command"`
 	}
-	return json.Unmarshal(handler, &h) == nil && strings.Contains(h.Command, " agent hook "+string(agent))
+	_ = json.Unmarshal(handler, &h)
+	return h.Command
+}
+
+// hookLine matches a command line HookCommand writes: one path, the hook,
+// and --max-wait when it is not the default.
+var hookLine = regexp.MustCompile(`^('(?:[^']|'\\'')*'|[A-Za-z0-9_./@%+=:,-]+) agent hook (claude|codex)( --max-wait [0-9.hms]+)?$`)
+
+// wrapped reports whether a handler of ours has a command install did not
+// write, such as ours run through op run or env.
+func wrapped(handler json.RawMessage) bool {
+	return !hookLine.MatchString(commandOf(handler))
 }
 
 // Plan is a change to a settings file.
@@ -215,10 +231,12 @@ type settings struct {
 	hooks  *object
 	// hadHooks: the file's hooks object held events before the change.
 	hadHooks bool
+	// indent is one level of the file's indent; "" for a file on one line.
+	indent string
 }
 
 func readSettings(path string) (*settings, error) {
-	s := &settings{path: path}
+	s := &settings{path: path, indent: "  "}
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		s.path = resolved
 	}
@@ -230,7 +248,7 @@ func readSettings(path string) (*settings, error) {
 	case err != nil:
 		return nil, err
 	}
-	s.before = data
+	s.before, s.indent = data, indentOf(data)
 	if s.root, err = parseObject(data); err != nil {
 		return nil, fmt.Errorf("%s: %w", s.path, err)
 	}
@@ -244,8 +262,30 @@ func readSettings(path string) (*settings, error) {
 	return s, nil
 }
 
+// indentOf is the indent of the first indented line of a JSON object,
+// which is one level deep: two spaces when none is or the object is empty,
+// "" for one written on one line.
+func indentOf(data []byte) string {
+	lines := bytes.Split(bytes.TrimRight(data, "\r\n"), []byte("\n"))
+	if len(lines) == 1 {
+		var c bytes.Buffer
+		if json.Compact(&c, data) == nil && c.String() == "{}" {
+			return "  "
+		}
+		return ""
+	}
+	for _, line := range lines[1:] {
+		rest := bytes.TrimLeft(line, " \t")
+		if n := len(line) - len(rest); n > 0 && len(bytes.TrimSpace(rest)) > 0 {
+			return string(line[:n])
+		}
+	}
+	return "  "
+}
+
 // plan writes the hooks back into the root object and formats the file the
-// way the agents write it: two-space indent, keys in their order.
+// way it was: its indent (two spaces for a new file, the way the agents
+// write theirs), keys in their order, a final newline if it had one.
 func (s *settings) plan() (Plan, error) {
 	switch {
 	case len(s.hooks.keys) > 0:
@@ -263,10 +303,17 @@ func (s *settings) plan() (Plan, error) {
 		return Plan{}, err
 	}
 	var out bytes.Buffer
-	if err := json.Indent(&out, raw, "", "  "); err != nil {
+	if s.indent == "" {
+		err = json.Compact(&out, raw)
+	} else {
+		err = json.Indent(&out, raw, "", s.indent)
+	}
+	if err != nil {
 		return Plan{}, err
 	}
-	out.WriteByte('\n')
+	if s.before == nil || bytes.HasSuffix(s.before, []byte("\n")) {
+		out.WriteByte('\n')
+	}
 	p := Plan{Path: s.path, Before: s.before, After: out.Bytes()}
 	if !p.Changed() {
 		p.After = p.Before
@@ -299,6 +346,9 @@ func PlanInstall(path string, agent Agent, command string, maxWait time.Duration
 				return nil, false
 			}
 			found = true
+			if wrapped(h) {
+				return h, true
+			}
 			return want, true
 		})
 		if err != nil {
