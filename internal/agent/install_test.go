@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -171,6 +172,9 @@ func TestInstallClaude(t *testing.T) {
       }
     ]
   },`).Replace(claudeSettings)
+	// The two hooks that wait on the phone say so in Claude Code's spinner.
+	status, _ := json.Marshal(waitingStatus(runtime.GOOS))
+	want = strings.ReplaceAll(want, "\"timeout\": 1560\n", "\"timeout\": 1560,\n            \"statusMessage\": "+string(status)+"\n")
 	if got != want {
 		t.Errorf("settings after install:\n%s\nwant:\n%s", got, want)
 	}

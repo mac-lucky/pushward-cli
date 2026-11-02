@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -97,6 +98,19 @@ type entry struct {
 	// was lists matchers earlier versions wrote for the event. A group of
 	// ours with one of them gets the current matcher on install.
 	was []string
+	// status is the spinner text Claude Code shows while the hook runs: a
+	// blocking hook keeps the terminal's own dialog from drawing, so this
+	// says where the question went and how to get it back.
+	status string
+}
+
+// waitingStatus is the spinner text for a prompt the hook sent to the phone.
+// Only macOS has the desk check that hands a prompt back on input.
+func waitingStatus(goos string) string {
+	if goos == "darwin" {
+		return "Asked on your phone with PushWard. Touch the keyboard or mouse to answer here instead."
+	}
+	return "Asked on your phone with PushWard. It comes back here if nobody answers in time."
 }
 
 // entries are the hooks for agent. The prompt hooks may wait up to maxWait
@@ -109,9 +123,10 @@ func entries(agent Agent, maxWait time.Duration) []entry {
 			{event: "Stop", timeout: 60, async: true},
 		}
 	}
+	status := waitingStatus(runtime.GOOS)
 	return []entry{
-		{event: "PermissionRequest", matcher: "*", timeout: wait},
-		{event: "PreToolUse", matcher: "AskUserQuestion", timeout: wait},
+		{event: "PermissionRequest", matcher: "*", timeout: wait, status: status},
+		{event: "PreToolUse", matcher: "AskUserQuestion", timeout: wait, status: status},
 		// Not idle_prompt: it comes about a minute after Stop with the same
 		// collapse id, and its generic text would replace the finished notice.
 		{event: "Notification", matcher: "agent_needs_input", async: true, was: []string{"idle_prompt|agent_needs_input"}},
@@ -129,6 +144,10 @@ func (e entry) handler(command string) json.RawMessage {
 	}
 	if e.async {
 		h.set("async", json.RawMessage("true"))
+	}
+	if e.status != "" {
+		m, _ := marshal(e.status)
+		h.set("statusMessage", m)
 	}
 	raw, _ := h.MarshalJSON()
 	return raw
