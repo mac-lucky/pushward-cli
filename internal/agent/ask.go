@@ -17,8 +17,14 @@ const (
 	// startWindow is how long a new card has for a device to report that it
 	// started it. After that, with none reporting, the question also goes
 	// out as a notification: iOS drops a push-to-start silently when a phone
-	// is over its budget, and an account may have no Apple device at all.
+	// is over its budget. An account with no Apple device to start it on
+	// gets the notification at once.
 	startWindow = 15 * time.Second
+	// startReads is how many times a start check reads the card, a few
+	// seconds apart, before a transient failure makes it give up.
+	startReads = 3
+	// startReadWithin bounds each of those reads.
+	startReadWithin = 10 * time.Second
 	// longPollSeconds is the ?wait= of every read, the most the API holds.
 	longPollSeconds = "25"
 	// pollEvery paces plain reads once the account's long-poll slots are
@@ -136,6 +142,9 @@ type ask struct {
 	cardSince time.Time
 	// confirmed: a device reported starting the card, or it was answered.
 	confirmed bool
+	// targetsRead: the card was read once right after its start, for how
+	// many devices it reaches.
+	targetsRead bool
 	// alsoNotify: no device started the card, so every round goes out as a
 	// notification as well.
 	alsoNotify bool
@@ -232,11 +241,27 @@ func (a *ask) round(ctx context.Context, rd round) (reply, outcome) {
 
 	deadline := time.NewTimer(time.Until(a.deadline))
 	defer deadline.Stop()
+	// The start check reads the card right after it starts, then once the
+	// start window has passed, in the background so an answer is not held
+	// up behind a slow read.
 	var check <-chan time.Time
+	var checkTimer *time.Timer
+	arm := func(at time.Time) {
+		checkTimer = time.NewTimer(time.Until(at))
+		check = checkTimer.C
+	}
+	defer func() {
+		if checkTimer != nil {
+			checkTimer.Stop()
+		}
+	}()
+	starts := make(chan startCount, 1)
 	if onCard && !a.confirmed && notification == "" && a.r.Opts.Via == "auto" {
-		t := time.NewTimer(time.Until(a.cardSince.Add(startWindow)))
-		defer t.Stop()
-		check = t.C
+		if a.targetsRead {
+			arm(a.cardSince.Add(startWindow))
+		} else {
+			arm(time.Now())
+		}
 	}
 	var desk <-chan time.Time
 	if a.r.watchesDesk() {
@@ -259,12 +284,34 @@ func (a *ask) round(ctx context.Context, rd round) (reply, outcome) {
 			}
 		case <-check:
 			check = nil
-			if a.unconfirmed(ctx) {
-				a.alsoNotify = true
-				var ok bool
-				if notification, ok = a.notify(ctx, rd); ok {
-					watchNotification()
+			wg.Go(func() { starts <- a.startCounts(wctx) })
+		case sc := <-starts:
+			first := !a.targetsRead
+			a.targetsRead = true
+			switch {
+			case !sc.ok:
+				// Read again once the window has passed, or give up: a card
+				// whose counts the server leaves out (an organization's)
+				// counts as started.
+				if first {
+					arm(a.cardSince.Add(startWindow))
 				}
+				continue
+			case sc.started > 0:
+				a.confirmed = true
+				continue
+			case sc.targeted == 0:
+				a.r.logf("%s: no device to start the card on, sending a notification too", a.slug)
+			case first:
+				arm(a.cardSince.Add(startWindow))
+				continue
+			default:
+				a.r.logf("%s: no device started the card (%d targeted), sending a notification too", a.slug, sc.targeted)
+			}
+			a.alsoNotify = true
+			var ok bool
+			if notification, ok = a.notify(ctx, rd); ok {
+				watchNotification()
 			}
 		case ev := <-events:
 			if ev.ok {
@@ -401,7 +448,7 @@ func (a *ask) start(ctx context.Context, rd round) error {
 		a.discard(ctx)
 		return err
 	}
-	a.cardUp, a.cardSince = true, time.Now()
+	a.cardUp, a.cardSince, a.targetsRead = true, time.Now(), false
 	return nil
 }
 
@@ -460,33 +507,43 @@ func (a *ask) content(rd round) map[string]any {
 	return c
 }
 
-// unconfirmed reports whether no device has started the card. A card whose
-// count the server leaves out (an organization's) counts as started.
-func (a *ask) unconfirmed(ctx context.Context) bool {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	body, err := a.r.Call(ctx, "getActivity", map[string]string{"slug": a.slug}, nil, nil)
-	if err != nil {
+// startCount is what a start check read: how many of the owner's Apple
+// devices the card is meant to reach and how many reported starting it. ok
+// is false when the read failed or the server left the counts out.
+type startCount struct {
+	targeted, started int
+	ok                bool
+}
+
+// startCounts reads the card's start counts. A transient failure, or a read
+// that hangs past startReadWithin, is read again, startReads times in all.
+func (a *ask) startCounts(ctx context.Context) startCount {
+	for n := 0; ; n++ {
+		rctx, cancel := context.WithTimeout(ctx, startReadWithin)
+		body, err := a.r.Call(rctx, "getActivity", map[string]string{"slug": a.slug}, nil, nil)
+		hung := rctx.Err() != nil
+		cancel()
+		if err == nil {
+			var act struct {
+				Targeted *int `json:"devices_targeted"`
+				Started  *int `json:"devices_started"`
+			}
+			if json.Unmarshal(body, &act) != nil || act.Targeted == nil || act.Started == nil {
+				return startCount{}
+			}
+			return startCount{targeted: *act.Targeted, started: *act.Started, ok: true}
+		}
+		if ctx.Err() != nil {
+			return startCount{}
+		}
 		a.r.logf("%s: reading the card: %s", a.slug, describe(err))
-		return false
+		if n+1 >= startReads || !(api.Transient(err) || hung) {
+			return startCount{}
+		}
+		if api.SleepContext(ctx, api.Backoff(n, err)) != nil {
+			return startCount{}
+		}
 	}
-	var act struct {
-		Targeted *int `json:"devices_targeted"`
-		Started  *int `json:"devices_started"`
-	}
-	if json.Unmarshal(body, &act) != nil || act.Started == nil {
-		return false
-	}
-	if *act.Started > 0 {
-		a.confirmed = true
-		return false
-	}
-	targeted := 0
-	if act.Targeted != nil {
-		targeted = *act.Targeted
-	}
-	a.r.logf("%s: no device started the card (%d targeted), sending a notification too", a.slug, targeted)
-	return true
 }
 
 // notify sends the round as an actionable notification and returns its id.

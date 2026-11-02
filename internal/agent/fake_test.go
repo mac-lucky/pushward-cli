@@ -46,6 +46,11 @@ type fakeAPI struct {
 	existing string
 	// started is the devices_started a read reports, -1 to leave it out.
 	started int
+	// targeted is the devices_targeted a read reports with it.
+	targeted int
+	// hangReads is how many plain reads of the card hang until the reader
+	// gives up, the way a dead connection does.
+	hangReads int
 	// cardAnswer is the option tapped on the card at a step (0 on a card
 	// with one question), and how long after the step was shown; "" for
 	// never.
@@ -89,11 +94,15 @@ type fakeNotification struct {
 	text   string
 }
 
-func newFakeAPI() *fakeAPI { return &fakeAPI{started: 1} }
+func newFakeAPI() *fakeAPI { return &fakeAPI{started: 1, targeted: 1} }
 
 func (f *fakeAPI) RoundTrip(r *http.Request) (*http.Response, error) {
 	rec := httptest.NewRecorder()
 	f.ServeHTTP(rec, r)
+	// A real transport fails a request whose context ended.
+	if err := r.Context().Err(); err != nil {
+		return nil, err
+	}
 	res := rec.Result()
 	res.Request = r
 	return res, nil
@@ -186,6 +195,13 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 		f.act = nil
 		return 204, nil
 	case c.Method == "GET" && strings.HasPrefix(c.Path, "/activities/"):
+		if wait == 0 && f.hangReads > 0 {
+			f.hangReads--
+			f.mu.Unlock()
+			<-ctx.Done()
+			f.mu.Lock()
+			return 499, nil
+		}
 		return f.park(ctx, wait, func() (bool, time.Time) {
 			if f.act == nil {
 				return true, time.Time{}
@@ -332,7 +348,7 @@ func (f *fakeAPI) activityJSON() map[string]any {
 	}
 	out := map[string]any{"slug": "x", "state": f.act.state, "content": content}
 	if f.act.state == "ongoing" && f.started >= 0 {
-		out["devices_targeted"] = 1
+		out["devices_targeted"] = f.targeted
 		out["devices_started"] = f.started
 	}
 	return out

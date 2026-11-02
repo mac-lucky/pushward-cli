@@ -356,6 +356,59 @@ func TestConfirmedCardSendsNoNotification(t *testing.T) {
 	}
 }
 
+// An account with no Apple device to start the card on gets the
+// notification as soon as the card is up, not after the start window.
+func TestNoDeviceToStartOnNotifiesAtOnce(t *testing.T) {
+	f := newFakeAPI()
+	f.started, f.targeted = 0, 0
+	f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "allow", "", 5 * time.Second }
+	out, logs := run(t, f, away(), nil, Claude, claudePermission)
+	if out != allowOut {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	if len(f.asked()) != 1 || !f.ended() {
+		t.Fatalf("%d notifications, card ended %v", len(f.asked()), f.ended())
+	}
+	if at := f.notifs[0].at.Sub(f.act.created); at > time.Second {
+		t.Errorf("notification sent %s after the card", at)
+	}
+	if !strings.Contains(logs, "no device to start the card on") {
+		t.Errorf("log %s", logs)
+	}
+}
+
+// The start check reads the card again when a read hangs or fails, a few
+// times, before it gives up.
+func TestStartCheckReadsAgain(t *testing.T) {
+	for hangs, want := range map[int]bool{0: true, 2: true, 3: false} {
+		f := newFakeAPI()
+		f.act = &fakeActivity{state: "ongoing", content: map[string]any{}}
+		f.started, f.hangReads = 0, hangs
+		var sc startCount
+		synctest.Test(t, func(t *testing.T) {
+			r, _ := newRunner(f, away())
+			sc = r.newAsk(Claude, Input{SessionID: "s", ToolName: "Bash"}).startCounts(context.Background())
+		})
+		if sc.ok != want || (want && (sc.targeted != 1 || sc.started != 0)) {
+			t.Errorf("%d hung reads: %+v", hangs, sc)
+		}
+		if reads := len(f.sent("GET", "/activities/")); reads != min(hangs+1, startReads) {
+			t.Errorf("%d hung reads: %d reads", hangs, reads)
+		}
+	}
+	// A refusal that is not transient is not read again.
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := newRunner(f, away())
+		if sc := r.newAsk(Claude, Input{SessionID: "s", ToolName: "Bash"}).startCounts(context.Background()); sc.ok {
+			t.Errorf("no card: %+v", sc)
+		}
+	})
+	if reads := len(f.sent("GET", "/activities/")); reads != 1 {
+		t.Errorf("a 404 was read %d times", reads)
+	}
+}
+
 // A personal key refused the card (the plan, a key that may only send
 // notifications) gets the notification: its own check says it is personal.
 func TestCreateRefusedSendsNotificationOnly(t *testing.T) {
@@ -400,15 +453,20 @@ func TestWaitLimitFallsBackToPolling(t *testing.T) {
 	if out, logs := run(t, f, away(), nil, Claude, claudePermission); out != allowOut {
 		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
 	}
+	// One long-poll, refused; then plain reads every 3s until the answer at
+	// 10s, and the start check's read right after the card started.
 	reads := f.sent("GET", "/activities/")
-	plain := 0
+	long, plain := 0, 0
 	for _, r := range reads {
-		if r.Query.Get("wait") == "" {
+		switch r.Query.Get("wait") {
+		case "":
 			plain++
+		case "25":
+			long++
 		}
 	}
-	if reads[0].Query.Get("wait") != "25" || plain < 3 || plain > 5 {
-		t.Errorf("%d reads, %d plain; first wait %q", len(reads), plain, reads[0].Query.Get("wait"))
+	if long != 1 || plain < 4 || plain > 6 {
+		t.Errorf("%d reads, %d long-polls, %d plain", len(reads), long, plain)
 	}
 }
 
