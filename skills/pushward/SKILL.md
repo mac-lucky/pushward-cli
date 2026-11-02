@@ -263,6 +263,31 @@ enabled encryption for organizations: tell the user rather than resending with `
 on your own. Leave `pushward e2e generate` and `pushward e2e import` to the user: they print
 or take the key itself. `pushward api` never encrypts. Needs CLI 1.4.0.
 
+## Prompts from Claude Code and Codex
+
+`pushward agent` is a hook, not something to call during a task: once the user installs it,
+their Claude Code or Codex permission prompts and Claude's questions go to their phone as an
+approval card while they are away from the terminal, and the answer comes back to the
+session. If the user asks for that, these are the commands; they run them, or you do when
+asked to:
+
+```sh
+pushward agent install claude
+pushward agent install codex
+pushward agent status
+pushward agent test
+pushward agent uninstall claude
+```
+
+Install keeps the other hooks in the settings file and writes a `.bak` copy first. After
+`pushward agent install codex`, tell the user to trust the new hooks once with `/hooks` in
+Codex. `pushward agent status` shows whether the key works, whether the Mac counts as at
+the desk right now, and which hooks are in place. Never run `pushward agent hook` yourself:
+the agent runs it with a JSON prompt on stdin. Needs CLI 1.8.0.
+
+With the hook installed in Claude Code, a question you ask with AskUserQuestion already reaches
+their phone when they are away, so it needs no `notify --action` of its own.
+
 ## Reading output
 
 Piped, every command prints the API response as JSON; on a terminal it prints a summary. Some

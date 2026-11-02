@@ -148,6 +148,29 @@ pushward email send --to ops@example.com --subject "Nightly report" --text-file 
 
 Email only goes to recipients you have verified in the app.
 
+## Coding agents (Claude Code and Codex)
+
+`pushward agent` runs as a Claude Code or Codex hook, so a permission prompt or a question from the agent reaches your phone while you are away from the terminal, and your answer goes back to the session.
+
+```sh
+pushward agent install claude    # hooks in ~/.claude/settings.json
+pushward agent install codex     # hooks in ~/.codex/hooks.json
+pushward agent status
+pushward agent test              # three sample questions on one card
+```
+
+Install merges its entries next to the hooks already in the file, keeps everything else where it was, and copies the old file to `<file>.bak` first. Running it again changes nothing; `--dry-run` prints the result instead of writing it. Codex skips a new hook until you trust it, so run `/hooks` in Codex once after installing. `pushward agent uninstall claude` (or `codex`) takes out only what install added.
+
+A permission prompt (a shell command, a file edit, an MCP tool) shows up as an approval Live Activity with Allow and Deny. Claude Code also gets Always when it has a rule to remember, the same one its own dialog would save; Codex has no such option, because its hooks cannot set one. When Claude asks you questions, one card steps through them (1/3, 2/3, 3/3) and the answers go back as if you had picked them in the terminal. A question that takes several answers stays in the terminal and you get a notification saying so. When a session sits waiting for input or finishes a turn you get a plain notification, and the next one from that session replaces it.
+
+On a Mac the hook first checks how long the keyboard and mouse have been idle. Used in the last 90 seconds (`--desk-idle`), and the prompt stays in the terminal with nothing sent. While a prompt waits on the phone, touching the Mac ends the card and hands the prompt back to the terminal. Linux has no idle check, so every prompt goes to the phone. `--desk away` or `--desk desk` skips the check.
+
+If no device reports starting the card within 15 seconds, the same question also comes as a time-sensitive notification with buttons. iOS silently drops a Live Activity start once a phone has used up its budget for them, and an account with no Apple device has nothing to start it on. For Claude's questions the notification has an Other field for a typed answer. Whichever you answer first wins and the other one is withdrawn. `--via notification` skips the card, `--via card` never falls back.
+
+With no answer after `--max-wait` (25 minutes) the prompt goes back to the terminal, or is denied with `--on-timeout deny`. Every hook flag can also be set in the environment as `PUSHWARD_AGENT_<FLAG>`, for example `PUSHWARD_AGENT_ON_TIMEOUT=deny`, which leaves the command Codex trusted unchanged. To wait longer, reinstall with `pushward agent install claude --max-wait 40m`: the hook's timeout in the settings file has to grow with it. Each card is a create plus one update per question, and both count against your Live Activity quota.
+
+What leaves your machine: the command, file path or question is sent to PushWard as the card's text, like any other Live Activity, and activities are not end-to-end encrypted. The fallback notifications are encrypted when you have set an encryption key. The hook logs to stderr (or `--log <file>`) and only writes slugs, ids and statuses there, never a command, typed text, an answer URL or your key. For Codex, install only writes `hooks.json`; hooks you keep in Codex's `config.toml` are left alone, and `agent status` does not see them.
+
 ## Organization keys
 
 With a key from a PushWard organization (a team account), `notify`, `schedule create`, `activity create`, `activity start`, `activity update`, `widget create` and `widget update` take `--target-groups`, `--target-tags` and `--target-members` (comma-separated group names, device tag names or user ids) to narrow who receives it. `activity update --no-target` and `widget update --no-target` clear the target again, which needs a key that reaches the whole organization. A personal key gets a 422 for the target flags.
