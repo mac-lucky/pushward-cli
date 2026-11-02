@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/mac-lucky/pushward-cli/internal/agent"
+	"github.com/mac-lucky/pushward-cli/internal/config"
 )
 
 // hookAnnotation marks the commands a coding agent runs as its hooks. They
@@ -204,8 +206,19 @@ func (a *App) agentRunner(opts agent.Options, logger *log.Logger) *agent.Runner 
 		}
 		return send(ctx, op, params, query, sealed)
 	}
-	return &agent.Runner{Call: call, Idle: agent.SystemIdle(), Log: logger, Opts: opts}
+	r := &agent.Runner{Call: call, Idle: agent.SystemIdle(), Log: logger, Opts: opts}
+	if keyErr == nil {
+		if dir, err := config.Dir(); err == nil {
+			r.KeyCache = agent.NewKeyCache(filepath.Join(dir, agentKeyCache), c.BaseURL, c.Token)
+			r.KeyCache.Now = a.Now
+		}
+	}
+	return r
 }
+
+// agentKeyCache is the file in the config directory where the hooks remember
+// a key that passed their check.
+const agentKeyCache = "agent-key-check.json"
 
 func newAgentInstallCmd(a *App, remove bool) *cobra.Command {
 	prefix := "Add the PushWard hooks to"
@@ -326,7 +339,10 @@ refused.`,
 				_, keyErr = a.call(cmd.Context(), "getMe", nil, nil, nil)
 				var kindErr error
 				if keyErr == nil {
-					kindErr = a.agentRunner(agent.DefaultOptions(), log.New(io.Discard, "", 0)).CheckKey(cmd.Context())
+					// Asked every time: status is how the user checks a key.
+					r := a.agentRunner(agent.DefaultOptions(), log.New(io.Discard, "", 0))
+					r.KeyCache = nil
+					kindErr = r.CheckKey(cmd.Context())
 				}
 				switch {
 				case keyErr != nil:

@@ -108,6 +108,9 @@ type Runner struct {
 	// Log receives ids and statuses; nil logs nothing.
 	Log  *log.Logger
 	Opts Options
+	// KeyCache, when set, lets a key that passed the check in the last hour
+	// skip it.
+	KeyCache *KeyCache
 
 	keyOnce sync.Once
 	keyErr  error

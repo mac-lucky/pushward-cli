@@ -228,6 +228,40 @@ func TestAgentHookLogFile(t *testing.T) {
 	}
 }
 
+// A key that passed the check is not checked again by the next hook process
+// for an hour; agent status checks it every time.
+func TestAgentHookRemembersTheKeyCheck(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("GET /auth/me", 200, `{"id":"u1"}`)
+	createRoute(f, false, 201, `{}`)
+	f.reply("POST /notifications", 201, `{"id":1}`)
+	checks := func() int {
+		n := 0
+		for _, c := range sentTo(f, "POST", "/activities") {
+			if c.Body["slug"] == "agent-key-check" {
+				n++
+			}
+		}
+		return n
+	}
+	stop := `{"session_id":"s","cwd":"/w","hook_event_name":"Stop","last_assistant_message":"done"}`
+	for i := range 2 {
+		if r := runCLI(t, srv, nil, stop, "agent", "hook", "claude", "--desk", "away"); r.code != 0 || checks() != 1 {
+			t.Fatalf("run %d: exit %d, %d key checks, stderr %s", i, r.code, checks(), r.stderr)
+		}
+	}
+	if n := len(sentTo(f, "POST", "/notifications")); n != 2 {
+		t.Errorf("%d notices, want 2", n)
+	}
+	b, err := os.ReadFile(filepath.Join(os.Getenv("PUSHWARD_CONFIG_DIR"), "agent-key-check.json"))
+	if err != nil || strings.Contains(string(b), "hlk_test") {
+		t.Errorf("cache %q %v", b, err)
+	}
+	if r := runCLI(t, srv, nil, "", "agent", "status"); !strings.Contains(r.stdout, "works") || checks() != 2 {
+		t.Errorf("status: %d key checks\n%s", checks(), r.stdout)
+	}
+}
+
 func TestAgentInstallCommand(t *testing.T) {
 	_, srv := newFake(t)
 	dir := t.TempDir()

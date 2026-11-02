@@ -33,9 +33,21 @@ const codeTargetDenied = "integration_key.target_denied"
 
 // CheckKey returns nil for a personal key, ErrOrgKey for an organization's
 // and ErrKeyUnchecked when the server's answers do not say which. It asks
-// the server once per Runner, before the first card or notification.
+// the server once per Runner, before the first card or notification, unless
+// the KeyCache says the key passed within the hour.
 func (r *Runner) CheckKey(ctx context.Context) error {
-	r.keyOnce.Do(func() { r.keyErr = r.checkKey(ctx) })
+	r.keyOnce.Do(func() {
+		if r.KeyCache != nil && r.KeyCache.passed() {
+			r.logf("key check passed within the hour")
+			return
+		}
+		r.keyErr = r.checkKey(ctx)
+		if r.keyErr == nil && r.KeyCache != nil {
+			if err := r.KeyCache.save(); err != nil {
+				r.logf("could not remember the key check: %v", err)
+			}
+		}
+	})
 	return r.keyErr
 }
 
