@@ -84,9 +84,10 @@ func (r *Runner) questions(ctx context.Context, in Input) []byte {
 	}
 	for _, q := range qs {
 		if q.MultiSelect {
-			// How Claude Code wants several answers to one question is
-			// not settled, so the terminal asks the whole lot, starting
-			// with the first.
+			// Claude Code takes several answers to one question as their
+			// labels joined with commas, but a card or a notification
+			// answers one option per tap, so the terminal asks the whole
+			// lot, starting with the first.
 			r.logf("a question takes several answers, leaving it to the terminal")
 			r.notice(ctx, in, Claude.Name()+" needs you", qs[0].Question, "A question is waiting in the terminal")
 			return nil
