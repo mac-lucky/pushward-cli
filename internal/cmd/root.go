@@ -54,6 +54,7 @@ print the API response as JSON.`,
 		newAuthCmd(a),
 		newVersionCmd(a),
 		newGHACmd(a),
+		newAgentCmd(a),
 	)
 	return group(root)
 }

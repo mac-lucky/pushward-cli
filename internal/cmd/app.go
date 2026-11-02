@@ -112,8 +112,14 @@ func Execute(app *App, args []string) int {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	err := root.ExecuteContext(ctx)
+	cmd, err := root.ExecuteContextC(ctx)
 	if err == nil {
+		return ExitOK
+	}
+	if cmd != nil && cmd.Annotations[hookAnnotation] != "" {
+		// A hook that fails leaves the prompt to the terminal; any exit
+		// but 0 could block the tool instead.
+		fmt.Fprintf(app.Stderr, "pushward agent: %v\n", err)
 		return ExitOK
 	}
 	var reported *reportedError
