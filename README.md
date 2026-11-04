@@ -255,7 +255,7 @@ Exit codes are stable, so scripts can branch on them:
 | 6 | server error or network failure |
 | 7 | `--wait` ran out, or the notification expired or was canceled before anyone acknowledged it |
 
-Rate limits (429) and 503s are retried for up to a minute, honoring `Retry-After`. Other server errors and network failures are only retried for reads and deletes: retrying a POST could send a notification twice.
+Rate limits (429) and 503s are retried for up to a minute, honoring `Retry-After`. Each POST keeps one `Idempotency-Key` across its retries, so a notification sent again after a 503 still arrives once. Other server errors and network failures are only retried for reads and deletes: other writes cannot tell a repeat from a new request.
 
 ## Known limitations
 

@@ -6,6 +6,7 @@ package api
 import (
 	"bytes"
 	"context"
+	crand "crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -31,6 +32,8 @@ const (
 	// activities, runs to a few hundred KiB. 8 MiB leaves room without letting
 	// a misbehaving proxy fill memory.
 	maxResponseBytes = 8 << 20
+	// idempotencyKeyHeader identifies one call across its retries.
+	idempotencyKeyHeader = "Idempotency-Key"
 )
 
 type Client struct {
@@ -74,11 +77,13 @@ func (c *Client) Call(ctx context.Context, opID string, params map[string]string
 	return c.Do(ctx, Request{Method: op.Method, Path: path, Query: query, Body: body})
 }
 
-// Do sends a request, retrying only where a retry cannot duplicate an effect.
-// 429 and 503 mean the server did not process the request, so every method
-// retries them. Other 5xx and transport errors retry only for GET and DELETE:
-// a replayed POST /notifications pushes twice, and a replayed PATCH on a
-// timeline activity appends its data point twice.
+// Do sends a request, retrying only where a retry should not duplicate an effect.
+// 429 and 503 ask the client to come back, so every method retries them. A 503
+// can still follow a write that landed, so a POST carries one Idempotency-Key
+// across its attempts and the notification endpoints use it to send once. Other
+// 5xx and transport errors retry only for GET and DELETE: a replayed POST /emails
+// sends twice, and a replayed PATCH on a timeline activity appends its data point
+// twice.
 func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 	if req.Timeout <= 0 {
 		req.Timeout = defaultTimeout
@@ -87,6 +92,14 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 		}
 	}
 	idempotent := req.Method == http.MethodGet || req.Method == http.MethodDelete || req.Method == http.MethodHead
+	if req.Method == http.MethodPost && req.Header.Get(idempotencyKeyHeader) == "" {
+		header := req.Header.Clone()
+		if header == nil {
+			header = http.Header{}
+		}
+		header.Set(idempotencyKeyHeader, crand.Text())
+		req.Header = header
+	}
 
 	start := time.Now()
 	var lastErr error
@@ -167,6 +180,14 @@ func (c *Client) once(ctx context.Context, req Request) (*Response, error) {
 		for _, v := range vs {
 			hr.Header.Add(k, v)
 		}
+	}
+	// net/http treats a canonical Idempotency-Key as permission to re-send the
+	// request by itself when a reused HTTP/1.1 connection drops, which goes around
+	// the retry rules in Do, on routes that ignore the key too. It looks up only
+	// that exact map key, and header names are case-insensitive on the wire.
+	if v, ok := hr.Header[idempotencyKeyHeader]; ok {
+		delete(hr.Header, idempotencyKeyHeader)
+		hr.Header["idempotency-key"] = v
 	}
 	if req.Body != nil && hr.Header.Get("Content-Type") == "" {
 		ct := "application/json"

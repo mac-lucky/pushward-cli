@@ -178,3 +178,94 @@ func TestServerDelay(t *testing.T) {
 		}
 	}
 }
+
+// A POST keeps one Idempotency-Key across its retries, so the server can tell a
+// retry from a new send; each call gets its own, and reads carry none.
+func TestIdempotencyKey(t *testing.T) {
+	var keys []string
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		keys = append(keys, r.Header.Get("Idempotency-Key"))
+		if n.Add(1)%2 == 1 {
+			w.WriteHeader(503)
+			return
+		}
+		w.WriteHeader(201)
+		io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{BaseURL: srv.URL, Token: "hlk_test", HTTP: srv.Client(), Sleep: func(context.Context, time.Duration) error { return nil }}
+
+	do := func(method string, header http.Header) {
+		t.Helper()
+		if _, err := c.Do(context.Background(), Request{Method: method, Path: "/x", Body: []byte(`{}`), Header: header}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	do("POST", nil)
+	do("POST", nil)
+	if len(keys) != 4 || keys[0] == "" || keys[0] != keys[1] || keys[2] != keys[3] {
+		t.Fatalf("keys = %q, want one per call, kept across its retry", keys)
+	}
+	if keys[0] == keys[2] {
+		t.Fatalf("two calls shared key %q", keys[0])
+	}
+
+	keys = nil
+	do("GET", nil)
+	do("PATCH", http.Header{"X-Other": {"y"}})
+	for _, k := range keys {
+		if k != "" {
+			t.Errorf("got key %q on a request that is not a POST", k)
+		}
+	}
+
+	keys = nil
+	header := http.Header{"Idempotency-Key": {"mine"}}
+	do("POST", header)
+	if len(keys) != 2 || keys[0] != "mine" || keys[1] != "mine" {
+		t.Errorf("keys = %q, want the caller's key kept", keys)
+	}
+
+	keys = nil
+	shared := http.Header{"X-Other": {"y"}}
+	do("POST", shared)
+	if shared.Get("Idempotency-Key") != "" {
+		t.Error("Do wrote the key into the caller's header map")
+	}
+}
+
+// net/http would re-send a request with a canonical Idempotency-Key by itself
+// when a reused connection drops. Only Do decides what is retried: a POST whose
+// connection dropped may still be running, so it fails after two requests.
+func TestIdempotencyKeyIsNotReplayedByTransport(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		switch n.Add(1) {
+		case 1:
+			w.WriteHeader(503)
+		case 2:
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			conn.Close()
+		default:
+			w.WriteHeader(201)
+			io.WriteString(w, `{}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{BaseURL: srv.URL, Token: "hlk_test", HTTP: srv.Client(), Sleep: func(context.Context, time.Duration) error { return nil }}
+
+	_, err := c.Do(context.Background(), Request{Method: "POST", Path: "/x", Body: []byte(`{}`)})
+	var transportErr *TransportError
+	if !errors.As(err, &transportErr) {
+		t.Fatalf("err = %v, want a TransportError", err)
+	}
+	if got := n.Load(); got != 2 {
+		t.Errorf("requests = %d, want 2: the transport replayed the POST", got)
+	}
+}
