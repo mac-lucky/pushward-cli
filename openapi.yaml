@@ -470,13 +470,13 @@ components:
       type: object
     ContentApproval:
       additionalProperties: true
-      description: A question card with 2-4 answer buttons. The question rides state; each option with a url fires your webhook directly, while an option without one gets a signed answer URL - the server records the tap in answer, pushes the resolved card to every device and ends the activity (dismissal_ttl controls how long the answered card lingers on the Lock Screen). Set end_date with on_expire for a deadline that applies a default answer. Older app builds render the generic card with the first two options as working buttons.
+      description: "A question card with 2-4 answer buttons. The question rides state; each option with a url fires your webhook directly, while an option without one gets a signed answer URL - the server records the tap in answer, pushes the resolved card to every device and ends the activity (dismissal_ttl controls how long the answered card lingers on the Lock Screen). Set end_date with on_expire for a deadline that applies a default answer. One card can also walk through several questions in place: send step and step_count (e.g. 1 of 3), wait for the answer, then PATCH the next question with step 2, its options and details. An answer on a step before the last keeps the card open for the next step instead of ending it; a card left there for 10 minutes with no next step, or past its end_date, is ended. Older app builds render the generic card with the first two options as working buttons."
       properties:
         accent_color:
           description: "Accent color: named color or hex (#RRGGBB / #RRGGBBAA)."
           type: string
         answer:
-          description: "Server-recorded resolution. Read-only and server-owned: ignored on write, cleared when a patch re-sends options. Set when an option without a url is tapped, or when the deadline passes."
+          description: "Server-recorded resolution. Read-only and server-owned: ignored on write, cleared when a patch starts a new round (a changed option set or a changed step). Set when an option without a url is tapped, or when the deadline passes."
           properties:
             at:
               description: Unix timestamp when the answer was recorded.
@@ -493,7 +493,7 @@ components:
           readOnly: true
           type: object
         answer_round:
-          description: Server-managed round counter, starting at 0 and advancing each time a changed option set starts a new round. Signed answer URLs are only valid for the round they were minted in; ignored on write.
+          description: Server-managed round counter, starting at 0 and advancing each time a changed option set or a changed step starts a new round. Signed answer URLs are only valid for the round they were minted in, so re-read them after every step change; ignored on write.
           readOnly: true
           type: integer
         background_color:
@@ -541,7 +541,7 @@ components:
           description: Option id the server records at end_date when nobody answered, or "none" to just expire. Requires end_date. The expired card is pushed to every device and the activity ends.
           type: string
         options:
-          description: 2-4 answer buttons. Replaced wholesale on each update; re-sending a changed set starts a new round and clears the stored answer, while an identical re-send keeps it. Required when template is approval.
+          description: 2-4 answer buttons. Replaced wholesale on each update; re-sending a changed set (or moving to another step) starts a new round and clears the stored answer, while an identical re-send on the same step keeps it. Required when template is approval.
           items:
             description: One answer button (2-4 per card).
             properties:
@@ -616,6 +616,16 @@ components:
           description: Short status text (e.g. Washing, Build Container Image).
           maxLength: 256
           type: string
+        step:
+          description: "Which question of a multi-step card this is, 1-based. Requires step_count and must not exceed it. The question rides state, and each step may change its own options, details, source and icon; the activity name cannot change in place on iOS, so keep it generic for the whole walk. A changed step starts a new round - the stored answer is cleared and the answer URLs are re-signed - even when the options are equal. Options with your own url are never re-signed, so make them differ between steps (for example carry the step in the url or body): older Android builds keep a tap's sent state while the option set is unchanged and would refuse the next step's taps. An answer on a step before the last is pushed and returned to a waiting GET ?wait= but the card stays open for the next step; if no next step arrives within 10 minutes the server ends the card. The answer on the final step ends it as usual. end_date and on_expire stay one deadline for the whole card: when it passes on an open question the default answer is recorded and the card ends, and when it passes while an answered step waits for its next question the card ends with that answer."
+          maximum: 10
+          minimum: 1
+          type: integer
+        step_count:
+          description: Total number of questions the card walks through, 1-10. Requires step. Shown as a 2/3 style counter on the card; changing it alone does not start a new round.
+          maximum: 10
+          minimum: 1
+          type: integer
         subtitle:
           description: Secondary descriptive text (e.g. Layer 150/200, repo / CI/CD).
           maxLength: 256
@@ -7026,6 +7036,15 @@ paths:
   /notifications:
     post:
       operationId: createNotification
+      parameters:
+        - description: "Identifies this send across retries, so a repeated request does not leave a second inbox row or push twice. Use a new random value for each send: a request repeating a key gets the first send's notification, whatever its body. A key applies per account and integration key, for as long as the notification stays in the inbox. Printable ASCII without spaces."
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: "Identifies this send across retries, so a repeated request does not leave a second inbox row or push twice. Use a new random value for each send: a request repeating a key gets the first send's notification, whatever its body. A key applies per account and integration key, for as long as the notification stays in the inbox. Printable ASCII without spaces."
+            maxLength: 128
+            pattern: ^[!-~]+$
+            type: string
       requestBody:
         content:
           application/json:
@@ -8363,6 +8382,15 @@ paths:
     post:
       description: Queues a notification to be sent at `send_at` (at most 365 days ahead). The body is a `POST /notifications` body plus `send_at`, validated the same way. Add `recurrence` (a cron expression and a time zone) to repeat it; `send_at` is then optional and marks where the schedule starts. A repeating schedule keeps one id and one pending slot for the whole series, and canceling it stops the series. Each send counts against the notification quota when it happens, not when it is scheduled; an account already out of quota gets the same `429 quota.exceeded` as `POST /notifications`. Up to 25 scheduled notifications can be pending per account. Revoking the integration key that scheduled one cancels it. With `acknowledge`, the receipt is created when it is sent; if acknowledged notifications are switched off at that moment, or 25 acknowledged notifications are already active, it goes out as a plain notification, and `GET /notifications/receipts/{id}` answers 404 for it.
       operationId: createScheduledNotification
+      parameters:
+        - description: "Identifies this send across retries, so a repeated request does not schedule it twice. Use a new random value for each send: a request repeating a key gets the schedule the first attempt made, whatever its body. A key applies per account and integration key, for as long as the schedule exists. Printable ASCII without spaces."
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: "Identifies this send across retries, so a repeated request does not schedule it twice. Use a new random value for each send: a request repeating a key gets the schedule the first attempt made, whatever its body. A key applies per account and integration key, for as long as the schedule exists. Printable ASCII without spaces."
+            maxLength: 128
+            pattern: ^[!-~]+$
+            type: string
       requestBody:
         content:
           application/json:
