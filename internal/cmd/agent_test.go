@@ -48,6 +48,8 @@ const permissionDenied = `{"status":403,"code":"integration_key.permission_denie
 
 // sentTo is every request to method and path, in order.
 func sentTo(f *fakeAPI, method, path string) []call {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	var out []call
 	for _, c := range f.calls {
 		if c.Method == method && c.Path == path {
