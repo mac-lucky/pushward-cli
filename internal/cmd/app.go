@@ -432,7 +432,7 @@ func checkArgs(cmd *cobra.Command, got []string) error {
 			}
 		case "key-id":
 			if !keyIDPattern.MatchString(arg) {
-				return usagef("invalid key id %q: want a UUID from pushward key list", arg)
+				return usagef("invalid key id %q: want a UUID from pushward key list, or pushward org key list for an organization key", arg)
 			}
 		}
 	}
