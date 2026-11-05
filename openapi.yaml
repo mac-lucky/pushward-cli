@@ -4982,7 +4982,7 @@ components:
         device_model:
           type: string
         last_active_at:
-          description: Only on /orgs/{org_id}/my-devices
+          description: Only on a member's own devices (my-devices); never returned on the public routes
           format: date-time
           type: string
         live_activities_enabled:
@@ -6545,14 +6545,14 @@ info:
 
     ## Organization administration
 
-    The Organizations endpoints take an org admin key (`hlo_`), which an owner or admin of the organization creates in the PushWard console. An org admin key administers one organization and sends nothing; an integration key sends and administers nothing, so a leaked integration key cannot change the organization.
+    The Organizations endpoints take an org admin key (`hlo_`), which an owner or admin of the organization creates in the PushWard console. An org admin key administers one organization and sends nothing; an integration key sends and administers no organization, so a leaked integration key cannot change the organization.
 
     | Level | Acts as | Can |
     |---|---|---|
     | `read` | a viewer | read the organization, its members, audit log, device fleet, groups, tags and routes |
     | `manage` | an admin | also rename it, invite, change and remove members and viewers, manage its integration keys, groups, tags and routes |
 
-    Both levels read the plan, seats and invoices and neither can change them. Neither can touch owners, admins or billing members, grant those roles, or delete the organization. Each endpoint says which level it needs; below it the answer is `403 org.permission_denied`. A key gets `404 org.not_found` for any organization but its own and `403 org_admin_key.not_allowed` on every endpoint outside this group. An expired key gets `401 org_admin_key.expired`. An organization that is not active still answers reads; most writes get `403 org.billing_inactive`.
+    Both levels read the plan, seats and invoices and neither can change them. Neither can touch owners, admins or billing members, grant those roles, or delete the organization. Each endpoint says which level it needs; below it the answer is `403 org.permission_denied`. A key gets `404 org.not_found` for any organization but its own and `403 org_admin_key.not_allowed` on every endpoint outside this group (`403 billing.console_only` on the billing ones). An expired key gets `401 org_admin_key.expired`. A key is revoked when the person who created it leaves or is removed from the organization, moves to the billing, member or viewer role, or deletes their account. An organization that is not active still answers reads; most writes get `403 org.billing_inactive`.
 
     ## Errors
 
@@ -15747,7 +15747,7 @@ paths:
       tags:
         - Organizations
     post:
-      description: "The key sends as the organization: its activities, notifications and widgets reach the members the organization's rules allow, its emails the organization's verified recipients. The secret is returned once. Takes an org admin key (hlo_) at level manage."
+      description: "The key sends as the organization: its activities, notifications and widgets reach the members the organization's rules allow, its emails the organization's verified recipients. The secret is returned once. Devices, sharing and account above none are refused (422 org.key_permission_unavailable): an organization has none of its own. Takes an org admin key (hlo_) at level manage."
       operationId: createOrgKey
       parameters:
         - in: path
@@ -15868,12 +15868,20 @@ paths:
           content:
             application/problem+json:
               examples:
-                unprocessable_entity:
+                emails_scoped:
+                  summary: Emails on a key limited to groups and tags
                   value:
-                    detail: validation failed
-                    errors:
-                      - location: body.slug
-                        message: expected length >= 1
+                    code: org.key_permission_unavailable
+                    detail: "a key limited to groups and tags cannot send emails: the organization's recipients are not in its groups and tags"
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+                personal_levels:
+                  summary: Devices, sharing or account above none
+                  value:
+                    code: org.key_permission_unavailable
+                    detail: "an organization key cannot have devices, sharing or account access: an organization has no devices, shares or personal account"
                     instance: /requests/9f86d081884c7d65
                     status: 422
                     title: Unprocessable Entity
@@ -16200,7 +16208,7 @@ paths:
       tags:
         - Organizations
     patch:
-      description: Changes the name, permissions, slug restrictions or expiry; omitted fields are left as they are. A key's target is set at creation and cannot change, and a key limited to groups and tags cannot get emails. Takes an org admin key (hlo_) at level manage.
+      description: "Changes the name, permissions, slug restrictions or expiry; omitted fields are left as they are. A key's target is set at creation and cannot change, and a key limited to groups and tags cannot get emails. Devices, sharing and account above none are refused (422 org.key_permission_unavailable): an organization has none of its own. Takes an org admin key (hlo_) at level manage."
       operationId: updateOrgKey
       parameters:
         - in: path
@@ -16330,10 +16338,20 @@ paths:
           content:
             application/problem+json:
               examples:
-                org.key_permission_unavailable:
+                emails_scoped:
+                  summary: Emails on a key limited to groups and tags
                   value:
                     code: org.key_permission_unavailable
                     detail: "a key limited to groups and tags cannot send emails: the organization's recipients are not in its groups and tags"
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+                personal_levels:
+                  summary: Devices, sharing or account above none
+                  value:
+                    code: org.key_permission_unavailable
+                    detail: "an organization key cannot have devices, sharing or account access: an organization has no devices, shares or personal account"
                     instance: /requests/9f86d081884c7d65
                     status: 422
                     title: Unprocessable Entity
@@ -16710,7 +16728,7 @@ paths:
         - Organizations
   /orgs/{org_id}/members/{user_id}:
     delete:
-      description: With the caller's own user ID, leaves the organization. The last owner cannot leave (409 org.last_owner). Takes an org admin key (hlo_) at level manage.
+      description: With the caller's own user ID, leaves the organization. The last owner cannot leave (409 org.last_owner). Removing or leaving revokes the member's invites and the org admin keys (hlo_) they created, with those keys' invites. Takes an org admin key (hlo_) at level manage.
       operationId: deleteOrgMember
       parameters:
         - in: path
@@ -16991,7 +17009,7 @@ paths:
       tags:
         - Organizations
     patch:
-      description: Takes role, email or both. The email is a label for owners, admins and viewers, unique in the organization (409 org.member_email_taken), never verified. Takes an org admin key (hlo_) at level manage.
+      description: Takes role, email or both. The email is a label for owners, admins and viewers, unique in the organization (409 org.member_email_taken), never verified. A role change revokes the member's invites for roles they can no longer grant; a move to billing, member or viewer also revokes the org admin keys (hlo_) they created, with those keys' invites. Takes an org admin key (hlo_) at level manage.
       operationId: updateOrgMember
       parameters:
         - in: path
