@@ -43,8 +43,8 @@ func (r *Runner) permission(ctx context.Context, agent Agent, in Input) []byte {
 		dialog = r.addDialog(in)
 	}
 	sum := in.summarize()
-	// Allowing asks for the phone to be unlocked; anyone holding a locked one
-	// can only refuse.
+	// Allowing asks for the phone to be unlocked: on Android anyone holding a
+	// locked one can only refuse, and a locked iPhone asks before any button.
 	opts := []option{{id: "allow", title: "Allow", label: "Allow", style: "primary", icon: "mdi:check", unlock: true}}
 	// Claude Code applies the permission update it suggested when the
 	// answer is "always"; Codex fails closed on one, so it gets no such

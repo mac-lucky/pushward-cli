@@ -48,9 +48,10 @@ prompt back (Esc would stop the agent's turn). On Linux a claude -p from
 cron has no terminal to read, and Windows over SSH has nothing to read:
 every prompt goes to the phone. On macOS and local Windows the keyboard
 and mouse decide for a scheduled run too; start one with
-PUSHWARD_AGENT_DESK=away to always ask the phone. Allow and Always ask for
-the phone to be unlocked on app versions that support it (older ones keep
-them one tap); Deny never does.
+PUSHWARD_AGENT_DESK=away to always ask the phone. On Android, Allow and
+Always ask for the phone to be unlocked on app versions that support it
+(older ones keep them one tap) and Deny stays one tap; a locked iPhone asks
+for Face ID or the passcode before any button.
 
 Notices go out only while you are away: a turn finished, a background
 session waiting on you, a plan to review, or a prompt left in the terminal
