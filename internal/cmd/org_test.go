@@ -189,6 +189,14 @@ func TestOrgKeyTokens(t *testing.T) {
 	if r := runCLI(t, srv, nil, "", "org", "member", "list"); r.code != ExitAuth || len(f.calls) != 0 {
 		t.Errorf("org member list without an org key: exit %d, calls %+v", r.code, f.calls)
 	}
+
+	// An org admin key in the integration key slot never goes out on a
+	// personal route: it fails with the way to move it.
+	t.Setenv("PUSHWARD_API_TOKEN", "hlo_misplaced")
+	f.calls = nil
+	if r := runCLI(t, srv, nil, "", "me"); r.code != ExitAuth || len(f.calls) != 0 || !strings.Contains(r.stderr, config.EnvOrgToken) {
+		t.Errorf("me with an hlo_ API key: exit %d, calls %+v, stderr %q", r.code, f.calls, r.stderr)
+	}
 }
 
 func TestOrgIDFromKey(t *testing.T) {

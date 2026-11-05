@@ -158,6 +158,10 @@ var errNoToken = errors.New("no API key: set " + config.EnvToken + " or run `pus
 
 var errNoOrgToken = errors.New("no org admin key: set " + config.EnvOrgToken + " or run `pushward auth login --org`")
 
+// errOrgKeyAsToken: an hlo_ key in the integration key slot, which every
+// non-org route refuses.
+var errOrgKeyAsToken = errors.New("the API key is an org admin key (hlo_), which only org commands take: put it in " + config.EnvOrgToken + " or run `pushward auth login --org`, and use an hlk_ key for " + config.EnvToken)
+
 func ExitCode(err error) int {
 	var ue *UsageError
 	var ae *api.Error
@@ -169,7 +173,7 @@ func ExitCode(err error) int {
 		return ExitUsage
 	case errors.Is(err, errWaitTimeout):
 		return ExitWaitTimeout
-	case errors.Is(err, errNoToken), errors.Is(err, errNoOrgToken):
+	case errors.Is(err, errNoToken), errors.Is(err, errNoOrgToken), errors.Is(err, errOrgKeyAsToken):
 		return ExitAuth
 	case errors.As(err, &ae):
 		switch {
@@ -248,6 +252,8 @@ func (a *App) keyed() (*api.Client, error) {
 	c, err := a.api()
 	if err == nil && c.Token == "" {
 		err = errNoToken
+	} else if err == nil && strings.HasPrefix(c.Token, "hlo_") {
+		err = errOrgKeyAsToken
 	}
 	return c, err
 }
@@ -262,6 +268,8 @@ func (a *App) call(ctx context.Context, opID string, params map[string]string, q
 		c, params, err = a.orgClient(ctx, params)
 	} else if c, err = a.api(); err == nil && c.Token == "" && !api.Op(opID).Public {
 		err = errNoToken
+	} else if err == nil && strings.HasPrefix(c.Token, "hlo_") {
+		err = errOrgKeyAsToken
 	}
 	if err != nil {
 		return nil, err

@@ -58,7 +58,7 @@ func newOrgGetCmd(a *App) *cobra.Command {
 	return c
 }
 
-var orgRoles = "owner, admin, billing, member or viewer"
+var orgRoles = "member or viewer (an admin key acts as an admin: owners, admins and billing members stay with the owners)"
 
 func newOrgMemberCmd(a *App) *cobra.Command {
 	c := &cobra.Command{
@@ -74,13 +74,13 @@ func newOrgMemberCmd(a *App) *cobra.Command {
 		a.getCmd("get <user-id>", "Show one member", "getOrgMember"),
 		newOrgMemberInviteCmd(a),
 		newOrgMemberUpdateCmd(a),
-		a.deleteCmd("remove <user-id>", "Remove a member (your own user id leaves the organization)", "deleteOrgMember", "removed", "member"),
+		a.deleteCmd("remove <user-id>", "Remove a member or viewer (owners, admins and billing members stay with the owners)", "deleteOrgMember", "removed", "member"),
 	)
 	return group(c)
 }
 
 var inviteFields = []field{
-	{"role", "role", kString, "role they join with: admin, billing, member or viewer (required)"},
+	{"role", "role", kString, "role they join with: member or viewer (required)"},
 	{"note", "note", kString, "who the invite is for, 1-100 characters"},
 }
 
@@ -106,7 +106,7 @@ func inviteBody(a *App, cmd *cobra.Command, fields []field, bf *bodyFlags, expir
 		return nil, err
 	}
 	if b["role"] == nil {
-		return nil, usagef("--role is required: admin, billing, member or viewer")
+		return nil, usagef("--role is required: member or viewer")
 	}
 	return b, nil
 }
