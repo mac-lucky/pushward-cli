@@ -6533,6 +6533,8 @@ info:
     | `sharing` | `none`, `read`, `manage` | read: `GET /permissions`, `GET /activities/{slug}/permissions`; manage: also `POST /activities/{slug}/permissions`, `POST /permissions/patterns`, `PATCH /permissions/{id}` (these three need a subscription) and `DELETE /permissions/{id}` |
     | `account` | `none`, `read`, `manage` | read: `GET /app/onboarding`, `GET /emails/recipients`; manage: also `PATCH /auth/me` (nickname), `PATCH /app/onboarding` and the other `/emails/recipients` endpoints |
 
+    `devices`, `sharing` and `account` are opt-in: every key starts at `none` on them, the default key included, and they are granted from the app. The default key can give another key no more of them than it was granted.
+
     A key has no device of its own: `is_current` is false on every device it lists, and it may remove any of them. Signing in and out, deleting the account, registering devices, purchases, redeeming share codes, the notification inbox and organization membership stay with the app.
 
     `GET /auth/me` works with every key and reports the calling key's permissions under `integration_key`. A key can also be restricted to activity slugs (`activity_slugs`) and widget slugs (`widget_slugs`), exact or with a trailing `*`, and can have an `expires_at`, after which it answers `401 integration_key.expired`. Requests outside the key's permissions receive `403 integration_key.permission_denied`, with a `detail` naming the level they need.
@@ -10606,10 +10608,10 @@ paths:
                     title: Bad Request
                     type: https://pushward.app/errors/bad-request
                 default_locked:
-                  summary: Changes the default key's permissions, slug restrictions or expiry
+                  summary: Changes the default key's name, activities, notifications, widgets or emails level, slug restrictions or expiry
                   value:
                     code: integration_key.default_locked
-                    detail: cannot change the permissions, slug restrictions or expiry of the default integration key
+                    detail: cannot change the name, the activities, notifications, widgets or emails level, the slug restrictions or the expiry of the default integration key
                     instance: /requests/9f86d081884c7d65
                     status: 400
                     title: Bad Request
