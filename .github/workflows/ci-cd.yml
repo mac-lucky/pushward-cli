@@ -18,8 +18,10 @@ concurrency:
 jobs:
   # Tests and analysis on every push and PR. A v* tag also publishes the image
   # (the runtime of the GitHub Action) and creates the GitHub Release with the
-  # notes and the SBOM; the two jobs below add the binaries to it.
+  # notes and the SBOM; the jobs below add the binaries to it. It starts once
+  # the macOS and Windows tests pass, so a tag they fail publishes nothing.
   ci-cd:
+    needs: [agent-tests]
     uses: mac-lucky/actions-shared-workflows/.github/workflows/go-cicd-reusable.yml@master
     permissions:
       contents: write
@@ -35,6 +37,42 @@ jobs:
       go_test_args: "-race"
       # A one-shot client: there is no server to health-check.
       enable_container_tests: false
+
+  # The agent hooks run on the developer's own machine, so their tests run on
+  # macOS and Windows too; ci-cd covers Linux with -race. Of internal/cmd only
+  # the agent tests: the rest of that package has not been made to pass on
+  # Windows. No -race here: on Windows it needs cgo.
+  agent-tests:
+    name: Agent tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Go version
+        id: go
+        run: echo "version=$(grep '^go ' go.mod | cut -d' ' -f2 | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          check-latest: true
+          cache: false
+
+      - name: Test
+        run: |
+          go test ./internal/agent/...
+          go test -run '^TestAgent' ./internal/cmd
 
   goreleaser:
     name: Binaries
@@ -62,6 +100,21 @@ jobs:
           check-latest: true
           cache: false
 
+      # The Scoop manifest goes to mac-lucky/scoop-bucket with a token of the
+      # mac-lucky-ci App scoped to that repo. Without the repo, the App's
+      # installation on it or its secrets this step fails, the token is empty
+      # and GoReleaser skips the bucket: the archives still go out.
+      - name: App token for scoop-bucket
+        id: scoop
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: mac-lucky
+          repositories: scoop-bucket
+          permission-contents: write
+
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
@@ -70,6 +123,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          SCOOP_BUCKET_TOKEN: ${{ steps.scoop.outputs.token }}
 
   # Opens a PR in mac-lucky/homebrew-tap moving the formula to this tag's
   # source tarball. The tap builds bottles on the PR and publishes them once

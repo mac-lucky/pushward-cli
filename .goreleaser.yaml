@@ -32,3 +32,24 @@ release:
   mode: keep-existing
   replace_existing_artifacts: true
   prerelease: auto
+
+# bucket/pushward.json in mac-lucky/scoop-bucket, for
+# `scoop bucket add maclucky https://github.com/mac-lucky/scoop-bucket`.
+# Skipped for a prerelease, and when the workflow got no token for the
+# bucket: a release must not fail over it.
+scoops:
+  - name: pushward
+    repository:
+      owner: mac-lucky
+      name: scoop-bucket
+      # Read only when the upload is not skipped, so never unset then.
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    directory: bucket
+    homepage: https://github.com/mac-lucky/pushward-cli
+    description: Command-line client for PushWard push notifications, Live Activities and widgets
+    license: MIT
+    commit_author:
+      name: mac-lucky
+      email: 44085390+mac-lucky@users.noreply.github.com
+    commit_msg_template: "pushward {{ .Tag }}"
+    skip_upload: '{{ if and (index .Env "SCOOP_BUCKET_TOKEN") (not .Prerelease) }}false{{ else }}true{{ end }}'
