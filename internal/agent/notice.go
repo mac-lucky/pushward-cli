@@ -83,7 +83,7 @@ func (r *Runner) answerDialog(path string) {
 		return
 	}
 	// No O_CREATE: a file already taken stays gone.
-	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	f, err := os.OpenFile(path, os.O_WRONLY, 0) // #nosec G304 -- the file addDialog made in the Dialogs directory
 	if err != nil {
 		return
 	}
@@ -100,7 +100,7 @@ func (r *Runner) answerDialog(path string) {
 // empty while its hook waits, it holds the time of the answer once there is
 // one. Content that is no time after made is that time still being written.
 func standing(path string, made, now time.Time) bool {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- a file listed in the Dialogs directory
 	if err != nil {
 		return false
 	}
