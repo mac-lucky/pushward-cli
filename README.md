@@ -233,10 +233,10 @@ Lists that come in pages (members, invites, the audit log) are read to the end u
 
 ## Devices, shares and account settings
 
-A personal integration key can also reach the account's own settings, at three more levels: `--devices`, `--sharing` and `--account`, each `none`, `read` or `manage`, on `key create` and `key update`. With an organization key that may send email, `email recipient` manages the organization's recipients instead of yours.
+A personal integration key can also reach the account's own settings, at three more levels: devices, sharing and account, each `none`, `read` or `manage`. They are opt-in. Every key starts at none on all three, the default key too, and only the app raises them. Once the app has given the default key a level, `key create` and `key update` can pass it on with `--devices`, `--sharing` and `--account`, but no higher: asking for more gets 403 `integration_key.grant_exceeded`. A key without the level gets 403 `integration_key.permission_denied` from the commands below. With an organization key that may send email, `email recipient` manages the organization's recipients instead of yours.
 
 ```sh
-pushward key create settings --activities none --devices manage --sharing read --account manage
+pushward key create settings --activities none --devices manage --sharing read --account manage   # the default key needs these levels from the app first
 pushward device list
 pushward device follow <device-id> deploy backup
 pushward device rename <device-id> "Desk iPad"

@@ -27,8 +27,10 @@ bare flag or =true keeps its old meaning (the highest level; for
 --notifications, send when the default key itself can only send) and =false
 means none; next to another level flag each needs a level of its own.
 --devices, --sharing and --account none|read|manage reach the account's own
-devices, shares and settings. A key can also be limited to activity and
-widget slugs and given an expiry.
+devices, shares and settings. Those three are opt-in: every key starts at
+none on them, the default key too, and only the app raises them, so the
+default key can pass on only what the app gave it. A key can also be limited
+to activity and widget slugs and given an expiry.
 
   pushward key create backup --notifications=send --activity-slugs 'backup-*' --jq .key
   pushward key create alerts --activities none --notifications=send

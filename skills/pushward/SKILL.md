@@ -270,9 +270,13 @@ only when asked, and pass it straight to where the user wants it with `--jq .key
 
 ## Devices, shares and settings
 
-With a key at the devices, sharing or account level (`pushward key create` takes
-`--devices`, `--sharing` and `--account`, each none, read or manage), the CLI reaches the
-account's own setup. Without the level the server answers 403.
+With a key at the devices, sharing or account level (each none, read or manage), the CLI
+reaches the account's own setup. These levels are opt-in: every key starts at none on them,
+the default key too, and only the PushWard app raises them. `pushward key create` and
+`pushward key update` take `--devices`, `--sharing` and `--account`, but the default key
+hands out no more than the app gave it (403 `integration_key.grant_exceeded`). Without the
+level the commands below get 403 `integration_key.permission_denied`. On either 403, ask the
+user to raise the level for that key in the app; another key or level will not get past it.
 
 ```sh
 pushward device list
