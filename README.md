@@ -1,6 +1,6 @@
 # pushward-cli
 
-`pushward` is a command-line client for [PushWard](https://pushward.app): push notifications, Live Activities, home screen widgets, scheduled notifications and email, from a shell script, a cron job or CI. It covers every operation in the public API, and anything newer is reachable through `pushward api`.
+`pushward` is a command-line client for [PushWard](https://pushward.app): push notifications, Live Activities, home screen widgets, scheduled notifications and email, from a shell script, a cron job or CI. It covers every operation in the public API, and anything newer is reachable through `pushward api`, which sends the integration key (org commands use the org admin key, see below).
 
 The same binary is the runtime of [pushward-action](https://github.com/mac-lucky/pushward-action) for GitHub Actions.
 
@@ -200,7 +200,7 @@ pushward widget create queue --template value --value 42 --label jobs --target-g
 
 An organization widget shows up on members' home screens, and on Apple Watch (watch app and complications) from PushWard 1.18.0. Its pushes share one window per organization of at least 60 seconds, so `--push-throttle` does nothing there; updates in between are kept and arrive with the next push.
 
-Organization email goes only to the organization's own recipients, not to the members' personal ones. They are registered through the API with an organization key that has email permission and is not limited to some groups and tags, and each one confirms the address before the first message ([pushward.app/docs/teams](https://pushward.app/docs/teams)). The CLI has no command for that yet; `pushward api` can call it.
+Organization email goes only to the organization's own recipients, not to the members' personal ones. They are registered through the API with an organization key that has email permission and is not limited to some groups and tags, and each one confirms the address before the first message ([pushward.app/docs/teams](https://pushward.app/docs/teams)). `pushward email recipient add` registers one (see below).
 
 ## Administering an organization
 

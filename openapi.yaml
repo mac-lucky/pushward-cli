@@ -1269,7 +1269,7 @@ components:
           description: "Text color: named color or hex."
           type: string
         unit:
-          description: Unit label displayed after the value (e.g. degC, %, rpm).
+          description: Unit label displayed after the value (e.g.  degC, %, rpm).
           maxLength: 32
           type: string
         url:
@@ -2773,7 +2773,7 @@ components:
           maxItems: 5
           type: array
         unit:
-          description: Unit label displayed after the value (e.g. degC, %, rpm).
+          description: Unit label displayed after the value (e.g.  degC, %, rpm).
           maxLength: 32
           type: string
         units:

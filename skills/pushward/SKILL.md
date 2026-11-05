@@ -238,8 +238,8 @@ All of an organization's widgets share one push window of at least 60 seconds, s
 `--push-throttle` is ignored and updating more than once a minute buys nothing.
 
 `email send` with an organization key only reaches addresses the organization registered
-and the recipient confirmed. The CLI has no command for adding one; if the user needs a new
-recipient, point them to https://pushward.app/docs/teams.
+and the recipient confirmed. `pushward email recipient add` registers a new one (see
+below).
 
 ## Administering an organization
 
