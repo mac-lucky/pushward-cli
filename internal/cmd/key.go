@@ -286,7 +286,7 @@ notifications).`,
 
 func newKeyUpdateCmd(a *App) *cobra.Command {
 	var bf bodyFlags
-	var allActivities, allWidgets, noExpiry bool
+	var clears keyClears
 	c := &cobra.Command{
 		Use:   "update <key-id>",
 		Short: "Change an integration key's permissions, slugs or expiry",
@@ -301,23 +301,8 @@ activity level, slugs and expiry cannot be changed.`,
 			if err != nil {
 				return err
 			}
-			for _, clear := range []struct {
-				on         bool
-				flag, with string
-				key        string
-				value      any
-			}{
-				{allActivities, "all-activities", "activity-slugs", "activity_slugs", []any{}},
-				{allWidgets, "all-widgets", "widget-slugs", "widget_slugs", []any{}},
-				{noExpiry, "no-expiry", "expires", "expires_at", nil},
-			} {
-				if !clear.on {
-					continue
-				}
-				if _, set := conv[clear.key]; set {
-					return usagef("--%s and --%s cannot be used together", clear.flag, clear.with)
-				}
-				conv[clear.key] = clear.value
+			if err := clears.apply(conv); err != nil {
+				return err
 			}
 			b, err := bf.build(a, conv)
 			if err != nil {
@@ -334,11 +319,41 @@ activity level, slugs and expiry cannot be changed.`,
 		},
 	}
 	addKeyFlags(c)
-	c.Flags().BoolVar(&allActivities, "all-activities", false, "remove the activity restriction")
-	c.Flags().BoolVar(&allWidgets, "all-widgets", false, "remove the widget restriction")
-	c.Flags().BoolVar(&noExpiry, "no-expiry", false, "remove the expiry")
+	clears.register(c)
 	bf.register(c)
 	return c
+}
+
+// keyClears are key update's flags that remove a restriction.
+type keyClears struct{ allActivities, allWidgets, noExpiry bool }
+
+func (k *keyClears) register(c *cobra.Command) {
+	c.Flags().BoolVar(&k.allActivities, "all-activities", false, "remove the activity restriction")
+	c.Flags().BoolVar(&k.allWidgets, "all-widgets", false, "remove the widget restriction")
+	c.Flags().BoolVar(&k.noExpiry, "no-expiry", false, "remove the expiry")
+}
+
+// apply sets what the flags clear in conv, refusing a flag that also sets it.
+func (k *keyClears) apply(conv map[string]any) error {
+	for _, clear := range []struct {
+		on         bool
+		flag, with string
+		key        string
+		value      any
+	}{
+		{k.allActivities, "all-activities", "activity-slugs", "activity_slugs", []any{}},
+		{k.allWidgets, "all-widgets", "widget-slugs", "widget_slugs", []any{}},
+		{k.noExpiry, "no-expiry", "expires", "expires_at", nil},
+	} {
+		if !clear.on {
+			continue
+		}
+		if _, set := conv[clear.key]; set {
+			return usagef("--%s and --%s cannot be used together", clear.flag, clear.with)
+		}
+		conv[clear.key] = clear.value
+	}
+	return nil
 }
 
 func newKeyRollCmd(a *App) *cobra.Command {

@@ -401,7 +401,7 @@ groups and tags cannot send emails.`,
 
 func newOrgKeyUpdateCmd(a *App) *cobra.Command {
 	var bf bodyFlags
-	var allActivities, allWidgets, noExpiry bool
+	var clears keyClears
 	nameField := []field{{"name", "name", kString, "new name"}}
 	c := &cobra.Command{
 		Use:   "update <key-id>",
@@ -417,23 +417,8 @@ tags cannot change.`,
 			if err != nil {
 				return err
 			}
-			for _, clear := range []struct {
-				on         bool
-				flag, with string
-				key        string
-				value      any
-			}{
-				{allActivities, "all-activities", "activity-slugs", "activity_slugs", []any{}},
-				{allWidgets, "all-widgets", "widget-slugs", "widget_slugs", []any{}},
-				{noExpiry, "no-expiry", "expires", "expires_at", nil},
-			} {
-				if !clear.on {
-					continue
-				}
-				if _, set := conv[clear.key]; set {
-					return usagef("--%s and --%s cannot be used together", clear.flag, clear.with)
-				}
-				conv[clear.key] = clear.value
+			if err := clears.apply(conv); err != nil {
+				return err
 			}
 			b, err := bf.build(a, conv)
 			if err != nil {
@@ -451,9 +436,7 @@ tags cannot change.`,
 	}
 	addOrgKeyFlags(c)
 	addFields(c, nameField)
-	c.Flags().BoolVar(&allActivities, "all-activities", false, "remove the activity restriction")
-	c.Flags().BoolVar(&allWidgets, "all-widgets", false, "remove the widget restriction")
-	c.Flags().BoolVar(&noExpiry, "no-expiry", false, "remove the expiry")
+	clears.register(c)
 	bf.register(c)
 	return c
 }
@@ -610,7 +593,8 @@ func newOrgRouteCmd(a *App) *cobra.Command {
 		Short:   "Routing rules: who receives which slugs",
 		Long: `Routing rules decide who receives an activity, notification or widget by
 its slug. The first rule that matches decides; with no matching rule
-everyone does. A new rule goes after the existing ones.
+everyone does. A new rule goes after the existing ones. On update,
+-F allow_group_ids=[] or -F allow_tag_ids=[] empties a list.
 
   pushward org route create 'deploy-*' --applies-to both --allow-group-ids 3f1c...
   pushward org route reorder 3f1c... 9a2b...
@@ -669,9 +653,9 @@ func newOrgDeviceCmd(a *App) *cobra.Command {
 	}
 	c.AddCommand(
 		a.listCmd("list", "List the members' devices", "listOrgDevices", 0,
-			[]string{"USER ID", "MEMBER", "DEVICE ID", "NAME", "PLATFORM", "TAGS", "LAST ACTIVE"}, func(it map[string]any) []string {
+			[]string{"USER ID", "MEMBER", "DEVICE ID", "NAME", "PLATFORM", "TAGS"}, func(it map[string]any) []string {
 				return []string{str(it, "user_id"), str(it, "nickname"), str(it, "device_id"), str(it, "name"), str(it, "platform"),
-					idList(it, "tag_ids"), shortTime(str(it, "last_active_at"))}
+					idList(it, "tag_ids")}
 			}),
 		newOrgSetCmd(a, "set-tags <user-id> <device-id> [<tag-id>...]", "Replace a member device's tags (none removes them all)", "setOrgDeviceTags", "tag_ids",
 			"device %s has %d tags"),
@@ -686,10 +670,19 @@ func newOrgAuditCmd(a *App) *cobra.Command {
 	}
 	c.AddCommand(a.listCmd("list", "List audit events, newest first", "listOrgAuditEvents", 200,
 		[]string{"TIME", "ACTOR", "ACTION", "TARGET"}, func(it map[string]any) []string {
-			return []string{shortTime(str(it, "created_at")), str(it, "actor_kind") + ":" + cmp.Or(str(it, "actor_nickname"), str(it, "actor_user_id")),
-				str(it, "action"), str(it, "target_kind") + ":" + str(it, "target_id")}
+			return []string{shortTime(str(it, "created_at")), kindID(str(it, "actor_kind"), cmp.Or(str(it, "actor_nickname"), str(it, "actor_user_id"))),
+				str(it, "action"), kindID(str(it, "target_kind"), str(it, "target_id"))}
 		}))
 	return group(c)
+}
+
+// kindID renders an audit actor or target as kind:id, or the kind alone when
+// the event names no one.
+func kindID(kind, id string) string {
+	if id == "" {
+		return kind
+	}
+	return kind + ":" + id
 }
 
 func newOrgBillingCmd(a *App) *cobra.Command {
@@ -745,6 +738,10 @@ with --output. The download goes to the link alone, without your key.
 // maxDownloadBytes bounds an invoice PDF.
 const maxDownloadBytes = 32 << 20
 
+// downloadTimeout bounds the whole invoice download, which goes around the
+// API client and its per-request timeout.
+var downloadTimeout = 2 * time.Minute
+
 // download saves what link points to into path. The link is checked like the
 // API URL (https, or http on loopback) and gets no Authorization header.
 func (a *App) download(ctx context.Context, link, path string) (int, error) {
@@ -752,6 +749,8 @@ func (a *App) download(ctx context.Context, link, path string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invoice link: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return 0, err

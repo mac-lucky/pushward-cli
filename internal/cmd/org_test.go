@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mac-lucky/pushward-cli/internal/config"
 )
@@ -64,6 +67,8 @@ func TestOrgCommands(t *testing.T) {
 			`{"allow_group_ids":["g1"],"applies_to":"both","note":"ops","slug_pattern":"deploy-*"}`, 201},
 		{[]string{"org", "route", "update", "r1", "--slug-pattern", "ci-*", "--allow-tag-ids", "t1,t2"}, "PATCH /orgs/o1/routes/r1",
 			`{"allow_tag_ids":["t1","t2"],"slug_pattern":"ci-*"}`, 200},
+		{[]string{"org", "route", "update", "r1", "--allow-tag-ids", "t1", "-F", "allow_group_ids=[]"}, "PATCH /orgs/o1/routes/r1",
+			`{"allow_group_ids":[],"allow_tag_ids":["t1"]}`, 200},
 		{[]string{"org", "route", "delete", "r1"}, "DELETE /orgs/o1/routes/r1", "", 204},
 		{[]string{"org", "route", "reorder", "r2", "r1"}, "PUT /orgs/o1/routes/order", `{"route_ids":["r2","r1"]}`, 200},
 		{[]string{"org", "route", "apply"}, "POST /orgs/o1/routes/apply", "", 204},
@@ -301,6 +306,13 @@ func TestOrgHumanOutput(t *testing.T) {
 	f.reply("GET /orgs/o1/billing/invoices", 200, `{"items":[{"transaction_id":"txn_1","invoice_number":"2026-1","total_cents":4900,"currency":"EUR","status":"completed"}]}`)
 	f.reply("DELETE /orgs/o1/groups/g1", 204, "")
 	f.reply("PUT /orgs/o1/groups/g1/members", 200, `{"id":"g1","member_ids":["u1","u2"]}`)
+	f.reply("GET /orgs/o1/audit-events", 200, `{"items":[
+		{"id":2,"actor_kind":"user","actor_user_id":"u1","actor_nickname":"Maciej","action":"route.updated","target_kind":"route","target_id":"r1","created_at":"2026-01-02T03:04:05Z"},
+		{"id":1,"actor_kind":"system","actor_user_id":null,"actor_nickname":null,"action":"billing.renewed","target_kind":null,"target_id":null,"created_at":"2026-01-01T03:04:05Z"}]}`)
+	f.reply("GET /orgs/o1/devices", 200, `{"items":[{"user_id":"u1","nickname":"Maciej","device_id":"d1","name":"Desk iPad","platform":"ipados","tag_ids":["t1","t2"]}]}`)
+	f.reply("GET /orgs/o1/groups", 200, `{"items":[{"id":"g1","name":"oncall","member_ids":["u1","u2","u3"],"description":"Primary"}]}`)
+	f.reply("GET /orgs/o1/tags", 200, `{"items":[{"id":"t1","name":"wall","device_count":4,"description":"Office screens"}]}`)
+	f.reply("PUT /orgs/o1/routes/order", 200, `{"items":[{"id":"r2","position":1,"slug_pattern":"ci-*","applies_to":"notifications","allow_group_ids":[],"allow_tag_ids":["t1"]},{"id":"r1","position":2,"slug_pattern":"deploy-*","applies_to":"both","allow_group_ids":["g1"],"allow_tag_ids":[]}]}`)
 
 	for _, tc := range []struct {
 		argv []string
@@ -313,6 +325,11 @@ func TestOrgHumanOutput(t *testing.T) {
 		{[]string{"org", "billing", "invoices"}, []string{"txn_1", "49.00 EUR"}},
 		{[]string{"org", "group", "delete", "g1"}, []string{"deleted group g1"}},
 		{[]string{"org", "group", "set-members", "g1", "u1", "u2"}, []string{"group g1 has 2 members"}},
+		{[]string{"org", "audit", "list"}, []string{"ACTOR", "TARGET", "user:Maciej  route.updated    route:r1", "system       billing.renewed"}},
+		{[]string{"org", "device", "list"}, []string{"USER ID  MEMBER  DEVICE ID  NAME       PLATFORM  TAGS\n", "u1       Maciej  d1         Desk iPad  ipados    t1,t2"}},
+		{[]string{"org", "group", "list"}, []string{"MEMBERS", "g1  oncall  3        Primary"}},
+		{[]string{"org", "tag", "list"}, []string{"DEVICES", "t1  wall  4        Office screens"}},
+		{[]string{"org", "route", "reorder", "r2", "r1"}, []string{"POS", "1    r2  ci-*      notifications          t1", "2    r1  deploy-*  both           g1"}},
 	} {
 		out := runTTY(t, srv, tc.argv...)
 		for _, w := range tc.want {
@@ -322,8 +339,17 @@ func TestOrgHumanOutput(t *testing.T) {
 		}
 	}
 	// --json keeps the raw response on a terminal.
-	if out := runTTY(t, srv, "org", "member", "list", "--json"); !strings.Contains(out, `"user_id": "u1"`) {
-		t.Errorf("--json printed %q", out)
+	for argv, want := range map[string]string{
+		"org member list":         `"user_id": "u1"`,
+		"org audit list":          `"actor_kind": "system"`,
+		"org device list":         `"device_id": "d1"`,
+		"org group list":          `"member_ids": [`,
+		"org tag list":            `"device_count": 4`,
+		"org route reorder r2 r1": `"slug_pattern": "ci-*"`,
+	} {
+		if out := runTTY(t, srv, append(strings.Fields(argv), "--json")...); !strings.Contains(out, want) {
+			t.Errorf("%s --json printed %q", argv, out)
+		}
 	}
 }
 
@@ -350,6 +376,21 @@ func TestOrgInvoiceDownload(t *testing.T) {
 	f.reply("GET /orgs/o1/billing/invoices/txn_1/pdf", 200, `{"url":"http://example.com/inv.pdf"}`)
 	if r := runCLI(t, srv, nil, "", "org", "billing", "invoice", "txn_1", "--output", path); r.code != ExitError || !strings.Contains(r.stderr, "https") {
 		t.Errorf("http link: exit %d %q", r.code, r.stderr)
+	}
+}
+
+func TestOrgInvoiceDownloadTimeout(t *testing.T) {
+	f, srv := newFake(t)
+	t.Setenv("PUSHWARD_ORG_API_TOKEN", "hlo_test")
+	stall := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	t.Cleanup(stall.Close)
+	defer func(d time.Duration) { downloadTimeout = d }(downloadTimeout)
+	downloadTimeout = 50 * time.Millisecond
+	f.reply("GET /orgs", 200, testOrgs)
+	f.reply("GET /orgs/o1/billing/invoices/txn_1/pdf", 200, `{"url":"`+stall.URL+`/inv.pdf"}`)
+	r := runCLI(t, srv, nil, "", "org", "billing", "invoice", "txn_1", "--output", filepath.Join(t.TempDir(), "inv.pdf"))
+	if r.code != ExitError || !strings.Contains(r.stderr, "deadline exceeded") {
+		t.Errorf("stalled download: exit %d %q", r.code, r.stderr)
 	}
 }
 
@@ -427,5 +468,29 @@ func TestAuthOrgKey(t *testing.T) {
 	}
 	if c := readConfig(t); c["org_token"] != testOrgKey || c["token"] != "" {
 		t.Errorf("config after logout: %v", c)
+	}
+}
+
+// With only an org admin key, auth status checks that key instead of failing
+// on the missing integration key.
+func TestAuthStatusOrgKeyOnly(t *testing.T) {
+	f, srv := newFake(t)
+	t.Setenv("PUSHWARD_API_TOKEN", "")
+	t.Setenv("PUSHWARD_ORG_API_TOKEN", testOrgKey)
+	f.reply("GET /orgs", 200, testOrgs)
+	out := runTTY(t, srv, "auth", "status")
+	for _, want := range []string{"key          none\n", "org key      hlo_new_...ey (from PUSHWARD_ORG_API_TOKEN)\n", "organization Acme (o1) as admin\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status lacks %q:\n%s", want, out)
+		}
+	}
+	f.calls = nil
+	r := runCLI(t, srv, nil, "", "auth", "status", "--jq", ".id")
+	if r.code != 0 || strings.TrimSpace(r.stdout) != "o1" || len(f.calls) != 1 || f.calls[0].Auth != "Bearer "+testOrgKey {
+		t.Errorf("piped: exit %d out %q calls %+v", r.code, r.stdout, f.calls)
+	}
+	f.reply("GET /orgs", 401, `{"status":401,"detail":"bad key"}`)
+	if r := runCLI(t, srv, nil, "", "auth", "status"); r.code != ExitAuth {
+		t.Errorf("rejected org key: exit %d %q", r.code, r.stderr)
 	}
 }

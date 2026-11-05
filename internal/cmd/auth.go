@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -165,10 +166,23 @@ func newAuthStatusCmd(a *App) *cobra.Command {
 				return err
 			}
 			cfg := a.cfg
-			// The org admin key slot is shown, not checked: /auth/me refuses it.
+			// /auth/me refuses an org admin key, so next to an integration key
+			// its slot is only shown; on its own it is checked with GET /orgs.
 			org := fmt.Sprintf("org key      %s\n", slot(cfg.OrgToken, cfg.OrgTokenSource, config.EnvOrgToken))
 			if cfg.Token == "" && cfg.OrgToken != "" {
-				a.out().Human("api          %s\nkey          none\n%s", cfg.APIURL, strings.TrimSuffix(org, "\n"))
+				o, err := keyOrg(cmd.Context(), a.newClient(cfg.APIURL, cfg.OrgToken))
+				if err != nil {
+					return err
+				}
+				b, err := json.Marshal(o)
+				if err != nil {
+					return err
+				}
+				return a.out().Print(b, func(w io.Writer) error {
+					fmt.Fprintf(w, "api          %s\nkey          none\n%s", cfg.APIURL, org)
+					_, err := fmt.Fprintf(w, "organization %s (%s) as %s\n", str(o, "name"), str(o, "id"), str(o, "role"))
+					return err
+				})
 			}
 			resp, err := a.call(cmd.Context(), "getMe", nil, nil, nil)
 			if err != nil {
