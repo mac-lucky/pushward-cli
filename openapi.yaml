@@ -545,6 +545,9 @@ components:
           items:
             description: One answer button (2-4 per card).
             properties:
+              authentication_required:
+                description: "Require device unlock before firing. Default false. The device enforces it, not the server: app builds that predate this field stay one-tap. Changing it starts a new round like any other option change."
+                type: boolean
               body:
                 description: HTTP request body for silent webhook. <=1KB. Ignored for custom-scheme URLs.
                 maxLength: 1024
