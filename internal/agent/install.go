@@ -2,9 +2,10 @@ package agent
 
 // Installing the hooks: entries merged into Claude Code's settings.json or
 // Codex's hooks.json, next to whatever hooks are there already. Our entries
-// are the ones whose command runs "agent hook <agent>"; uninstall takes out
-// those and nothing else. One whose command the user wrapped in another
-// (op run, env) is left as it is by install.
+// are the ones that run "agent hook <agent>", as a command line or as a
+// program with its args; uninstall takes out those and nothing else. One
+// whose command the user wrapped in another (op run, env) is left as it is
+// by install.
 
 import (
 	"bytes"
@@ -41,19 +42,37 @@ func DefaultSettings(agent Agent) (string, error) {
 	return filepath.Join(home, dir, file), nil
 }
 
-// HookCommand is the command line the hooks run: this binary, by a path that
-// survives an upgrade, then "agent hook <agent>". Codex trusts a hook by its
-// command, so the line has to come out the same on every install.
-func HookCommand(agent Agent, maxWait time.Duration) (string, error) {
+// HookExe is the path the hooks run this binary by, one that survives an
+// upgrade.
+func HookExe() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	cmd := shellQuote(stablePath(exe)) + " agent hook " + string(agent)
+	return stablePath(exe), nil
+}
+
+// hookCommand is what a hook handler runs: exe with "agent hook <agent>",
+// and --max-wait when it is not the default. Codex trusts a hook by its
+// command, so it has to come out the same on every install.
+//
+// On macOS and Linux it is one command line for the shell. Claude Code on
+// Windows runs a command line in Git Bash or, without it, in PowerShell,
+// which does not run a line that starts with a quoted path, so it gets the
+// program and its args to run with no shell. Codex there runs the line with
+// cmd.exe /C, which takes the path in double quotes.
+func hookCommand(agent Agent, exe string, maxWait time.Duration, goos string) (command string, args []string) {
+	args = []string{"agent", "hook", string(agent)}
 	if maxWait != DefaultMaxWait {
-		cmd += " --max-wait " + maxWait.String()
+		args = append(args, "--max-wait", maxWait.String())
 	}
-	return cmd, nil
+	switch {
+	case goos != "windows":
+		return shellQuote(exe) + " " + strings.Join(args, " "), nil
+	case agent == Claude:
+		return exe, args
+	}
+	return `"` + exe + `" ` + strings.Join(args, " "), nil
 }
 
 // stablePath prefers the pushward on PATH when it is this binary, and
@@ -104,18 +123,24 @@ type entry struct {
 	status string
 }
 
-// waitingStatus is the spinner text for a prompt the hook sent to the phone.
-// Only macOS has the desk check that hands a prompt back on input.
+// waitingStatus is the spinner text for a prompt the hook sent to the phone:
+// how the desk check on goos hands it back.
 func waitingStatus(goos string) string {
-	if goos == "darwin" {
+	switch goos {
+	case "windows":
 		return "Asked on your phone with PushWard. Touch the keyboard or mouse to answer here instead."
+	case "darwin", "linux":
+		// Space is input to the Mac too, and a Mac reached over SSH reads
+		// only this terminal.
+		return "Asked on your phone with PushWard. Press Space in this terminal to answer here instead (Esc stops the turn)."
 	}
 	return "Asked on your phone with PushWard. It comes back here if nobody answers in time."
 }
 
-// entries are the hooks for agent. The prompt hooks may wait up to maxWait
-// for the phone, so the agent gets a minute more before it gives up on them.
-func entries(agent Agent, maxWait time.Duration) []entry {
+// entries are the hooks for agent on goos. The prompt hooks may wait up to
+// maxWait for the phone, so the agent gets a minute more before it gives up
+// on them.
+func entries(agent Agent, maxWait time.Duration, goos string) []entry {
 	wait := int((maxWait + time.Minute) / time.Second)
 	if agent == Codex {
 		return []entry{
@@ -123,22 +148,27 @@ func entries(agent Agent, maxWait time.Duration) []entry {
 			{event: "Stop", timeout: 60, async: true},
 		}
 	}
-	status := waitingStatus(runtime.GOOS)
+	status := waitingStatus(goos)
 	return []entry{
 		{event: "PermissionRequest", matcher: "*", timeout: wait, status: status},
 		{event: "PreToolUse", matcher: "AskUserQuestion", timeout: wait, status: status},
 		// Not idle_prompt: it comes about a minute after Stop with the same
 		// collapse id, and its generic text would replace the finished notice.
-		{event: "Notification", matcher: "agent_needs_input", async: true, was: []string{"idle_prompt|agent_needs_input"}},
+		{event: "Notification", matcher: "agent_needs_input|permission_prompt", async: true, was: []string{"agent_needs_input", "idle_prompt|agent_needs_input"}},
 		{event: "Stop", async: true},
 	}
 }
 
-func (e entry) handler(command string) json.RawMessage {
+// handler runs command, or with args the program command with no shell.
+func (e entry) handler(command string, args []string) json.RawMessage {
 	h := newObject()
 	h.set("type", json.RawMessage(`"command"`))
 	c, _ := marshal(command)
 	h.set("command", c)
+	if args != nil {
+		a, _ := marshal(args)
+		h.set("args", a)
+	}
 	if e.timeout > 0 {
 		h.set("timeout", json.RawMessage(strconv.Itoa(e.timeout)))
 	}
@@ -149,42 +179,61 @@ func (e entry) handler(command string) json.RawMessage {
 		m, _ := marshal(e.status)
 		h.set("statusMessage", m)
 	}
+	if args != nil {
+		// Claude Code on Windows without Git Bash blocks the tool when a
+		// hook fails (a binary gone after an uninstall, say). The program
+		// form is only written there.
+		h.set("onFailure", json.RawMessage(`"continue"`))
+	}
 	raw, _ := h.MarshalJSON()
 	return raw
 }
 
-func (e entry) group(command string) json.RawMessage {
+func (e entry) group(command string, args []string) json.RawMessage {
 	g := newObject()
 	if e.matcher != "" {
 		m, _ := marshal(e.matcher)
 		g.set("matcher", m)
 	}
-	g.set("hooks", json.RawMessage("["+string(e.handler(command))+"]"))
+	g.set("hooks", json.RawMessage("["+string(e.handler(command, args))+"]"))
 	raw, _ := g.MarshalJSON()
 	return raw
 }
 
+// hookHandler is the part of a hook handler that says what it runs.
+type hookHandler struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
+func handlerOf(raw json.RawMessage) hookHandler {
+	var h hookHandler
+	_ = json.Unmarshal(raw, &h)
+	return h
+}
+
 // ours reports whether a hook handler runs this integration for agent.
 func ours(handler json.RawMessage, agent Agent) bool {
-	return strings.Contains(commandOf(handler), " agent hook "+string(agent))
+	h := handlerOf(handler)
+	return strings.Contains(h.Command+" "+strings.Join(h.Args, " "), " agent hook "+string(agent))
 }
 
-func commandOf(handler json.RawMessage) string {
-	var h struct {
-		Command string `json:"command"`
-	}
-	_ = json.Unmarshal(handler, &h)
-	return h.Command
-}
+// hookLine matches a command line hookCommand writes: one path, quoted for
+// a POSIX shell or in double quotes for cmd.exe, then the hook's args.
+// hookArgs matches the args of the program form.
+var (
+	hookLine = regexp.MustCompile(`^('(?:[^']|'\\'')*'|"[^"]+"|[A-Za-z0-9_./@%+=:,-]+) agent hook (claude|codex)( --max-wait [0-9.hms]+)?$`)
+	hookArgs = regexp.MustCompile(`^agent hook (claude|codex)( --max-wait [0-9.hms]+)?$`)
+)
 
-// hookLine matches a command line HookCommand writes: one path, the hook,
-// and --max-wait when it is not the default.
-var hookLine = regexp.MustCompile(`^('(?:[^']|'\\'')*'|[A-Za-z0-9_./@%+=:,-]+) agent hook (claude|codex)( --max-wait [0-9.hms]+)?$`)
-
-// wrapped reports whether a handler of ours has a command install did not
+// wrapped reports whether a handler of ours runs something install did not
 // write, such as ours run through op run or env.
 func wrapped(handler json.RawMessage) bool {
-	return !hookLine.MatchString(commandOf(handler))
+	h := handlerOf(handler)
+	if h.Args != nil {
+		return !hookArgs.MatchString(strings.Join(h.Args, " "))
+	}
+	return !hookLine.MatchString(h.Command)
 }
 
 // Plan is a change to a settings file.
@@ -243,7 +292,8 @@ func writeFile(path string, data []byte, mode fs.FileMode) error {
 		return err
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
-	if err := tmp.Chmod(mode); err != nil {
+	// Windows keeps no POSIX mode.
+	if err := tmp.Chmod(mode); err != nil && runtime.GOOS != "windows" {
 		_ = tmp.Close()
 		return err
 	}
@@ -355,22 +405,23 @@ func (s *settings) plan() (Plan, error) {
 	return p, nil
 }
 
-// PlanInstall adds agent's hooks to the settings file at path, running
-// command. An entry of ours already there is updated in place, so running it
-// again changes nothing.
-func PlanInstall(path string, agent Agent, command string, maxWait time.Duration) (Plan, error) {
+// PlanInstall adds agent's hooks to the settings file at path, running exe
+// (HookExe) the way the agent runs hooks on goos. An entry of ours already
+// there is updated in place, so running it again changes nothing.
+func PlanInstall(path string, agent Agent, exe string, maxWait time.Duration, goos string) (Plan, error) {
 	s, err := readSettings(path)
 	if err != nil {
 		return Plan{}, err
 	}
-	for _, e := range entries(agent, maxWait) {
+	command, args := hookCommand(agent, exe, maxWait, goos)
+	for _, e := range entries(agent, maxWait, goos) {
 		var groups []json.RawMessage
 		if raw, ok := s.hooks.get(e.event); ok {
 			if groups, err = array(raw); err != nil {
 				return Plan{}, fmt.Errorf("%s: hooks.%s: %w", s.path, e.event, err)
 			}
 		}
-		want := e.handler(command)
+		want := e.handler(command, args)
 		found := false
 		groups, _, err = editHandlers(groups, func(h json.RawMessage) (json.RawMessage, bool) {
 			switch {
@@ -389,7 +440,7 @@ func PlanInstall(path string, agent Agent, command string, maxWait time.Duration
 			return Plan{}, err
 		}
 		if !found {
-			groups = append(groups, e.group(command))
+			groups = append(groups, e.group(command, args))
 		}
 		if groups, err = rematch(groups, agent, e); err != nil {
 			return Plan{}, err

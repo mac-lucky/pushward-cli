@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\me\\scoop\\apps\\pushward\\current\\pushward.exe\" agent hook codex --max-wait 40m0s",
+            "timeout": 2460
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\Users\\me\\scoop\\apps\\pushward\\current\\pushward.exe\" agent hook codex --max-wait 40m0s",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

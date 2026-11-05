@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -39,10 +40,22 @@ question Claude asks, goes to your phone as an approval Live Activity, and
 your answer goes back to the agent. When no device shows the card within
 15s, the same question comes as a notification with buttons.
 
-On a Mac you used in the last 90s, the prompt stays in the terminal; touch
-the Mac while one waits on the phone and it comes back to the terminal.
-Linux has no such check: every prompt goes to the phone. Needs-input and
-finished notices go out only while you are away.
+When you used the computer in the last 90s, the prompt stays in the
+terminal, and using it while a prompt waits on the phone brings the prompt
+back. macOS and Windows read the keyboard and mouse. Linux, and a Mac
+reached over SSH, read the agent's terminal: press Space there to take a
+prompt back (Esc would stop the agent's turn). On Linux a claude -p from
+cron has no terminal to read, and Windows over SSH has nothing to read:
+every prompt goes to the phone. On macOS and local Windows the keyboard
+and mouse decide for a scheduled run too; start one with
+PUSHWARD_AGENT_DESK=away to always ask the phone. Allow and Always ask for
+the phone to be unlocked on app versions that support it (older ones keep
+them one tap); Deny never does.
+
+Notices go out only while you are away: a turn finished, a background
+session waiting on you, a plan to review, or a prompt left in the terminal
+(not sent, or not answered in time). A prompt that showed before you left
+stays silent.
 
   pushward agent install claude
   pushward agent install codex
@@ -50,8 +63,10 @@ finished notices go out only while you are away.
   pushward agent test
 
 The command, file or question shown on the card is sent to PushWard as the
-card's text. The hooks need a personal key: anyone the card reaches can
-answer it, so with an organization's key they send nothing.`,
+card's text, a long command cut in the middle so its end still shows.
+Values that look like keys or passwords are masked first, which catches the
+obvious ones, not all. The hooks need a personal key: anyone the card
+reaches can answer it, so with an organization's key they send nothing.`,
 	}
 	c.AddCommand(
 		newAgentHookCmd(a),
@@ -83,9 +98,9 @@ func (f *agentFlags) register(c *cobra.Command, hook bool) {
 		return
 	}
 	fl.StringVar(&f.opts.OnTimeout, "on-timeout", d.OnTimeout, "when --max-wait passes: none (back to the terminal) or deny")
-	fl.DurationVar(&f.opts.DeskIdle, "desk-idle", d.DeskIdle, "macOS: no input for this long means you are away from the desk")
-	fl.StringVar(&f.opts.Desk, "desk", d.Desk, "auto (read the Mac's idle time), away or desk")
-	fl.StringVar(&f.opts.Notices, "notices", d.Notices, "needs-input and finished notices: away, always or off")
+	fl.DurationVar(&f.opts.DeskIdle, "desk-idle", d.DeskIdle, "no input for this long means you are away: the keyboard and mouse on macOS and Windows, the agent's terminal on Linux and on a Mac over SSH")
+	fl.StringVar(&f.opts.Desk, "desk", d.Desk, "auto (read the idle time of the keyboard and mouse, or of the terminal), away or desk")
+	fl.StringVar(&f.opts.Notices, "notices", d.Notices, "notices (finished, waiting on you, a plan or a prompt left in the terminal): away, always or off")
 	fl.StringVar(&f.log, "log", "", "append the log to this file instead of stderr")
 }
 
@@ -211,14 +226,19 @@ func (a *App) agentRunner(opts agent.Options, logger *log.Logger) *agent.Runner 
 		if dir, err := config.Dir(); err == nil {
 			r.KeyCache = agent.NewKeyCache(filepath.Join(dir, agentKeyCache), c.BaseURL, c.Token)
 			r.KeyCache.Now = a.Now
+			r.Dialogs = filepath.Join(dir, agentDialogs)
 		}
 	}
 	return r
 }
 
 // agentKeyCache is the file in the config directory where the hooks remember
-// a key that passed their check.
-const agentKeyCache = "agent-key-check.json"
+// a key that passed their check, and agentDialogs the directory where they
+// leave a file per dialog that needs no second push.
+const (
+	agentKeyCache = "agent-key-check.json"
+	agentDialogs  = "agent-dialogs"
+)
 
 func newAgentInstallCmd(a *App, remove bool) *cobra.Command {
 	prefix := "Add the PushWard hooks to"
@@ -228,8 +248,10 @@ func newAgentInstallCmd(a *App, remove bool) *cobra.Command {
 		Long: `Add the hooks to ~/.claude/settings.json (Claude Code) or
 ~/.codex/hooks.json (Codex), keeping every other setting and hook as it is.
 The file as it was is copied to <file>.bak first, unless there is a .bak
-already: that one is kept. Running it again changes nothing. Codex runs a
-new hook only after you trust it once with /hooks.`,
+already: that one is kept. Running it again changes nothing, and an
+install from an older version is updated in place. Codex runs a new hook
+only after you trust it once with /hooks. On Windows, Claude Code needs
+2.1.295 or later for the hooks install writes there.`,
 	}
 	if remove {
 		prefix = "Take the PushWard hooks out of"
@@ -262,11 +284,11 @@ was is copied to <file>.bak first, unless there is a .bak already.`
 					if maxWait < time.Second {
 						return usagef("--max-wait must be at least 1s")
 					}
-					var command string
-					if command, err = agent.HookCommand(ag, maxWait); err != nil {
+					var exe string
+					if exe, err = agent.HookExe(); err != nil {
 						return err
 					}
-					plan, err = agent.PlanInstall(path, ag, command, maxWait)
+					plan, err = agent.PlanInstall(path, ag, exe, maxWait, runtime.GOOS)
 				}
 				if err != nil {
 					return err
@@ -360,7 +382,7 @@ refused.`,
 				}
 			}
 			opts, err := a.hookOptions()
-			fmt.Fprintf(w, "desk     %s\n", deskState(cmd.Context(), opts, err))
+			fmt.Fprintf(w, "desk     %s\n", deskState(cmd.Context(), opts, err, agent.SystemIdle()))
 			for _, ag := range agents {
 				path, err := agent.DefaultSettings(ag)
 				if err != nil {
@@ -394,7 +416,7 @@ func (a *App) hookOptions() (agent.Options, error) {
 	return f.opts, f.opts.Validate()
 }
 
-func deskState(ctx context.Context, opts agent.Options, optsErr error) string {
+func deskState(ctx context.Context, opts agent.Options, optsErr error, idle agent.Idler) string {
 	switch {
 	case optsErr != nil:
 		return fmt.Sprintf("%v: the hook leaves every prompt in the terminal", optsErr)
@@ -403,12 +425,13 @@ func deskState(ctx context.Context, opts agent.Options, optsErr error) string {
 	case opts.Desk == "away":
 		return "away (PUSHWARD_AGENT_DESK=away): prompts go to the phone"
 	}
-	idle := agent.SystemIdle()
 	if idle == nil {
 		return "no idle time to read here: every prompt goes to the phone"
 	}
 	d, err := idle(ctx)
 	switch {
+	case errors.Is(err, agent.ErrNoTerminal):
+		return "no terminal to read: every prompt goes to the phone"
 	case err != nil:
 		return "could not read the idle time: prompts go to the phone"
 	case d < opts.DeskIdle:

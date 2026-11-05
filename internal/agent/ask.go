@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,11 +57,14 @@ const (
 // option is one answer the user can pick.
 type option struct {
 	id string
-	// title fits the card's button (24 runes); label is the full text, for
-	// the notification's button and for the answer given to the agent.
+	// title fits the card's button (24 runes, masked); label is the full
+	// text, the answer given to the agent and, masked, the notification's
+	// button.
 	title, label string
 	style, icon  string
 	destructive  bool
+	// unlock asks for the device to be unlocked before the answer counts.
+	unlock bool
 }
 
 // round is one question put to the user, on the card and, when that is not
@@ -79,9 +83,21 @@ type round struct {
 	step, steps int
 }
 
-// fitsCard reports whether an approval card can carry the round's options.
+// fitsCard reports whether an approval card can carry the round's options:
+// two to four, which its buttons tell apart. Two that cut to the same title
+// go out as a notification, whose buttons have room for more of the label.
 func (rd round) fitsCard() bool {
-	return len(rd.options) >= 2 && len(rd.options) <= 4
+	if len(rd.options) < 2 || len(rd.options) > 4 {
+		return false
+	}
+	for i, o := range rd.options {
+		for _, p := range rd.options[:i] {
+			if strings.EqualFold(o.title, p.title) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // final reports whether the server ends the card once this round is
@@ -150,6 +166,8 @@ type ask struct {
 	alsoNotify bool
 	// notifUp: a notification of this ask may still be on the devices.
 	notifUp bool
+	// returned: handed back because the user came back to the desk.
+	returned bool
 }
 
 func (r *Runner) newAsk(agent Agent, in Input) *ask {
@@ -280,6 +298,7 @@ func (a *ask) round(ctx context.Context, rd round) (reply, outcome) {
 		case <-desk:
 			if a.r.backAtDesk(ctx) {
 				a.r.logf("%s: input at the desk, handing the prompt back to the terminal", a.slug)
+				a.returned = true
 				return reply{}, handedBack
 			}
 		case <-check:
@@ -487,6 +506,9 @@ func (a *ask) content(rd round) map[string]any {
 		if o.icon != "" {
 			m["icon"] = o.icon
 		}
+		if o.unlock {
+			m["authentication_required"] = true
+		}
 		opts[i] = m
 	}
 	c := map[string]any{
@@ -562,13 +584,16 @@ func (a *ask) notify(ctx context.Context, rd round) (string, bool) {
 	for _, o := range rd.options[:min(len(rd.options), most)] {
 		// A blank label gets the card's "Option N": the server refuses an
 		// action with no title.
-		title := cut(oneLine(o.label), 64)
+		title := cut(oneLine(maskSecrets(o.label)), 64)
 		if title == "" {
 			title = o.title
 		}
 		m := map[string]any{"id": o.id, "title": title}
 		if o.destructive {
 			m["destructive"] = true
+		}
+		if o.unlock {
+			m["authentication_required"] = true
 		}
 		actions = append(actions, m)
 	}

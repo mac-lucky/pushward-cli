@@ -42,6 +42,12 @@ type fakeAPI struct {
 	// and code, before the target is read.
 	notifStatus int
 	notifCode   string
+	// askStatus, when set, refuses the notifications that have actions.
+	askStatus int
+	// createDelay holds each create of a card this long before it answers,
+	// and noticeDelay each notification without actions.
+	createDelay time.Duration
+	noticeDelay time.Duration
 	// existing is the stored activity a create finds, "" for none.
 	existing string
 	// started is the devices_started a read reports, -1 to leave it out.
@@ -125,7 +131,21 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		f.calls = append(f.calls, c)
 	}
+	var delay time.Duration
+	switch {
+	case probe(c) || c.Method != "POST":
+	case c.Path == "/activities":
+		delay = f.createDelay
+	case c.Path == "/notifications" && c.Body["actions"] == nil:
+		delay = f.noticeDelay
+	}
 	f.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(delay):
+		}
+	}
 	status, body := f.route(r.Context(), c)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -217,6 +237,9 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 	case c.Method == "POST" && c.Path == "/notifications":
 		if f.notifStatus != 0 {
 			return problem(f.notifStatus, f.notifCode, "scripted")
+		}
+		if f.askStatus != 0 && c.Body["actions"] != nil {
+			return problem(f.askStatus, "", "scripted")
 		}
 		if probe(c) {
 			return f.refuseTarget()

@@ -1,0 +1,77 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\me\\scoop\\apps\\pushward\\current\\pushward.exe",
+            "args": [
+              "agent",
+              "hook",
+              "claude"
+            ],
+            "timeout": 1560,
+            "statusMessage": "Asked on your phone with PushWard. Touch the keyboard or mouse to answer here instead.",
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\me\\scoop\\apps\\pushward\\current\\pushward.exe",
+            "args": [
+              "agent",
+              "hook",
+              "claude"
+            ],
+            "timeout": 1560,
+            "statusMessage": "Asked on your phone with PushWard. Touch the keyboard or mouse to answer here instead.",
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "agent_needs_input|permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\me\\scoop\\apps\\pushward\\current\\pushward.exe",
+            "args": [
+              "agent",
+              "hook",
+              "claude"
+            ],
+            "async": true,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\me\\scoop\\apps\\pushward\\current\\pushward.exe",
+            "args": [
+              "agent",
+              "hook",
+              "claude"
+            ],
+            "async": true,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ]
+  }
+}

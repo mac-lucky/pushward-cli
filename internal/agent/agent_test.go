@@ -6,8 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -88,7 +92,8 @@ func TestClaudePermission(t *testing.T) {
 			if c["step"] != nil || c["step_count"] != nil {
 				t.Errorf("a one-question card has step fields: %v", c)
 			}
-			wantOpts := `[{"icon":"mdi:check","id":"allow","style":"primary","title":"Allow"},{"icon":"mdi:check-all","id":"always","style":"secondary","title":"Always"},{"icon":"mdi:close","id":"deny","style":"destructive","title":"Deny"}]`
+			// Allow and Always ask for an unlock; Deny is one tap.
+			wantOpts := `[{"authentication_required":true,"icon":"mdi:check","id":"allow","style":"primary","title":"Allow"},{"authentication_required":true,"icon":"mdi:check-all","id":"always","style":"secondary","title":"Always"},{"icon":"mdi:close","id":"deny","style":"destructive","title":"Deny"}]`
 			if got := mustJSON(t, c["options"]); got != wantOpts {
 				t.Errorf("options\n got  %s\n want %s", got, wantOpts)
 			}
@@ -132,10 +137,16 @@ func TestClaudePermissionSessionSuggestion(t *testing.T) {
 		t.Fatalf("stdout\n got  %s\n want %s", out, want)
 	}
 	c := f.steps()[0]
-	if got := mustJSON(t, c["options"]); !strings.Contains(got, `{"icon":"mdi:check-all","id":"always","style":"secondary","title":"This session"}`) {
+	if got := mustJSON(t, c["options"]); !strings.Contains(got, `{"authentication_required":true,"icon":"mdi:check-all","id":"always","style":"secondary","title":"This session"}`) {
 		t.Errorf("options %s", got)
 	}
-	if c["state"] != "Edit app.go" || mustJSON(t, c["details"]) != `[{"label":"Edit","value":"internal/app.go"}]` {
+	// A path with no drive letter is not absolute on Windows, so it shows
+	// as given there.
+	value := "internal/app.go"
+	if runtime.GOOS == "windows" {
+		value = "/home/u/src/webapp/internal/app.go"
+	}
+	if c["state"] != "Edit app.go" || mustJSON(t, c["details"]) != `[{"label":"Edit","value":"`+value+`"}]` {
 		t.Errorf("state %v, details %v", c["state"], c["details"])
 	}
 
@@ -144,7 +155,7 @@ func TestClaudePermissionSessionSuggestion(t *testing.T) {
 	o := away()
 	o.Via = "notification"
 	run(t, f, o, nil, Claude, in)
-	if got := mustJSON(t, f.asked()[0]["actions"]); got != `[{"id":"allow","title":"Allow"},{"id":"always","title":"Allow for this session"},{"destructive":true,"id":"deny","title":"Deny"}]` {
+	if got := mustJSON(t, f.asked()[0]["actions"]); got != `[{"authentication_required":true,"id":"allow","title":"Allow"},{"authentication_required":true,"id":"always","title":"Allow for this session"},{"destructive":true,"id":"deny","title":"Deny"}]` {
 		t.Errorf("actions %s", got)
 	}
 }
@@ -165,7 +176,7 @@ func TestCodexPermission(t *testing.T) {
 			if c["state"] != "Run a command" || mustJSON(t, c["details"]) != `[{"label":"Bash","value":"cargo build --release"}]` {
 				t.Errorf("state %v, details %v", c["state"], c["details"])
 			}
-			if got := mustJSON(t, c["options"]); got != `[{"icon":"mdi:check","id":"allow","style":"primary","title":"Allow"},{"icon":"mdi:close","id":"deny","style":"destructive","title":"Deny"}]` {
+			if got := mustJSON(t, c["options"]); got != `[{"authentication_required":true,"icon":"mdi:check","id":"allow","style":"primary","title":"Allow"},{"icon":"mdi:close","id":"deny","style":"destructive","title":"Deny"}]` {
 				t.Errorf("Codex gets no Always: %s", got)
 			}
 			if name := f.sent("POST", "/activities")[0].Body["name"]; name != "Codex" {
@@ -175,14 +186,278 @@ func TestCodexPermission(t *testing.T) {
 	}
 }
 
-// The plan review and Claude's questions never take the permission path.
+// The plan review and Claude's questions never take the permission path. A
+// plan waiting for review sends a notice while the user is away; at the
+// desk, nothing.
 func TestClaudePermissionSkipsQuestionsAndPlans(t *testing.T) {
 	for _, tool := range []string{"AskUserQuestion", "ExitPlanMode"} {
 		f := newFakeAPI()
 		in := strings.Replace(claudePermission, `"tool_name":"Bash"`, `"tool_name":"`+tool+`"`, 1)
-		if out, _ := run(t, f, away(), nil, Claude, in); out != "" || len(f.calls) != 0 {
-			t.Errorf("%s: stdout %q, %d requests", tool, out, len(f.calls))
+		out, _ := run(t, f, away(), nil, Claude, in)
+		if out != "" || f.act != nil || len(f.asked()) != 0 {
+			t.Errorf("%s: stdout %q, card %v, %d questions", tool, out, f.act != nil, len(f.asked()))
 		}
+		n := f.notices()
+		switch {
+		case tool == "AskUserQuestion" && len(f.calls) != 0:
+			t.Errorf("%s: %d requests", tool, len(f.calls))
+		case tool == "ExitPlanMode" && (len(n) != 1 || n[0]["title"] != "Claude Code needs you" || n[0]["body"] != "A plan is waiting for your review in the terminal"):
+			t.Errorf("%s: notices %+v", tool, n)
+		}
+	}
+	f := newFakeAPI()
+	o := DefaultOptions()
+	o.Desk = "desk"
+	if run(t, f, o, nil, Claude, strings.Replace(claudePermission, `"tool_name":"Bash"`, `"tool_name":"ExitPlanMode"`, 1)); len(f.calls) != 0 {
+		t.Errorf("a plan at the desk: %d requests", len(f.calls))
+	}
+}
+
+// permissionPrompt is the Notification Claude Code sends 6 seconds into a
+// dialog of session.
+func permissionPrompt(session string) string {
+	return `{"session_id":"` + session + `","hook_event_name":"Notification","message":"Claude needs your permission to use Bash","notification_type":"permission_prompt"}`
+}
+
+// hookWith runs one Claude hook with dialogs as the Dialogs directory, inside
+// the caller's synctest bubble.
+func hookWith(f *fakeAPI, dialogs string, opts Options, idle Idler, stdin string) []byte {
+	r, _ := newRunner(f, opts)
+	r.Idle, r.Dialogs = idle, dialogs
+	return r.Hook(context.Background(), Claude, strings.NewReader(stdin))
+}
+
+// Claude Code sends permission_prompt for the plan dialog 6 seconds after
+// showing it; the plan's notice went out already, so that one sends nothing.
+// Another session's prompt, the next prompt of the same session, and one a
+// minute after a dialog's notice still notify.
+func TestDialogNoticeIsNotRepeated(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "pushward", "agent-dialogs")
+	plan := strings.Replace(claudePermission, `"tool_name":"Bash"`, `"tool_name":"ExitPlanMode"`, 1)
+	multi := askInput(strings.Replace(questionsJSON, `"multiSelect":false}]`, `"multiSelect":true}]`, 1))
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		hook := func(stdin string, want int) {
+			t.Helper()
+			hookWith(f, dialogs, away(), nil, stdin)
+			if n := len(f.notices()); n != want {
+				t.Fatalf("%d notices, want %d: %+v", n, want, f.notices())
+			}
+		}
+		hook(plan, 1)
+		time.Sleep(6 * time.Second)
+		hook(permissionPrompt("other"), 2)
+		hook(permissionPrompt("sess-1"), 2)
+		hook(permissionPrompt("sess-1"), 3)
+
+		hook(multi, 4)
+		time.Sleep(6 * time.Second)
+		hook(permissionPrompt("sess-1"), 4)
+
+		hook(plan, 5)
+		time.Sleep(dialogFor)
+		hook(permissionPrompt("sess-1"), 6)
+	})
+	if left, err := os.ReadDir(dialogs); err != nil || len(left) != 0 {
+		t.Errorf("dialog files left: %v %v", left, err)
+	}
+}
+
+// Claude Code sends permission_prompt 6 seconds into a permission dialog,
+// while the PermissionRequest hook is still waiting on the phone.
+func TestPromptOnThePhoneIsNotRepeated(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	f.cardAnswer = answerCard("allow", 40*time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		var out []byte
+		var wg sync.WaitGroup
+		wg.Go(func() { out = hookWith(f, dialogs, away(), nil, claudePermission) })
+		time.Sleep(6 * time.Second)
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		wg.Wait()
+		if string(out) != allowOut {
+			t.Errorf("stdout %s", out)
+		}
+		if n := len(f.notices()); n != 0 {
+			t.Errorf("%d notices for a prompt already on the phone: %+v", n, f.notices())
+		}
+		// The next prompt left in the terminal is another dialog.
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		if n := len(f.notices()); n != 1 {
+			t.Errorf("%d notices, want 1", n)
+		}
+	})
+}
+
+// Claude Code sends no permission_prompt for a prompt answered before its 6
+// seconds are up, so the prompt that comes later is another dialog's.
+func TestQuickAnswerDoesNotSwallowLaterPrompt(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	f.cardAnswer = answerCard("allow", 2*time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		if out := hookWith(f, dialogs, away(), nil, claudePermission); string(out) != allowOut {
+			t.Fatalf("stdout %s", out)
+		}
+		time.Sleep(10 * time.Second)
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		if n := len(f.notices()); n != 1 {
+			t.Errorf("%d notices for a prompt left in the terminal, want 1", n)
+		}
+	})
+}
+
+// An answer around Claude Code's 6 seconds: a permission_prompt it sent just
+// before the answer still finds the file, and a later one is not swallowed.
+func TestAnsweredDialogStandsBriefly(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	f.cardAnswer = answerCard("allow", 5500*time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		for _, wait := range []time.Duration{time.Second, 10 * time.Second} {
+			if out := hookWith(f, dialogs, away(), nil, claudePermission); string(out) != allowOut {
+				t.Fatalf("stdout %s", out)
+			}
+			time.Sleep(wait)
+			hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		}
+		if n := len(f.notices()); n != 1 {
+			t.Errorf("%d notices, want 1 for the prompt 10s after the answer: %+v", n, f.notices())
+		}
+	})
+}
+
+// The hook counts the user as away before it sends anything, so a card that
+// takes longer than 6 seconds to go up is not pushed a second time.
+func TestSlowCardIsNotRepeated(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	f.createDelay = 7 * time.Second
+	f.cardAnswer = answerCard("allow", 40*time.Second)
+	synctest.Test(t, func(t *testing.T) {
+		var out []byte
+		var wg sync.WaitGroup
+		wg.Go(func() { out = hookWith(f, dialogs, away(), nil, claudePermission) })
+		time.Sleep(6 * time.Second)
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		wg.Wait()
+		if string(out) != allowOut || len(f.steps()) != 1 || len(f.notices()) != 0 {
+			t.Errorf("stdout %s, %d card updates, notices %+v", out, len(f.steps()), f.notices())
+		}
+	})
+}
+
+// Two prompts of one session at once (parallel subagents): each has a file
+// of its own, so neither permission_prompt pushes.
+func TestConcurrentPromptsAreNotRepeated(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f1, f2, notified := newFakeAPI(), newFakeAPI(), newFakeAPI()
+	f1.cardAnswer = answerCard("allow", 40*time.Second)
+	f2.cardAnswer = answerCard("deny", 50*time.Second)
+	second := strings.Replace(claudePermission, bashCommand, "make test", 1)
+	synctest.Test(t, func(t *testing.T) {
+		var out1, out2 []byte
+		var wg sync.WaitGroup
+		wg.Go(func() { out1 = hookWith(f1, dialogs, away(), nil, claudePermission) })
+		wg.Go(func() { out2 = hookWith(f2, dialogs, away(), nil, second) })
+		time.Sleep(6 * time.Second)
+		wg.Go(func() { hookWith(notified, dialogs, away(), nil, permissionPrompt("sess-1")) })
+		wg.Go(func() { hookWith(notified, dialogs, away(), nil, permissionPrompt("sess-1")) })
+		wg.Wait()
+		if string(out1) != allowOut || string(out2) != denyOut {
+			t.Errorf("stdout %s %s", out1, out2)
+		}
+	})
+	if len(f1.steps()) != 1 || len(f2.steps()) != 1 {
+		t.Errorf("card updates %d %d, want a card each", len(f1.steps()), len(f2.steps()))
+	}
+	if n := len(f1.notices()) + len(f2.notices()) + len(notified.notices()); n != 0 {
+		t.Errorf("%d notices", n)
+	}
+}
+
+// Neither a card nor a notification goes out: the PermissionRequest hook
+// sends the notice itself, and the permission_prompt that follows sends none.
+func TestPromptLeftInTheTerminalNotifiesOnce(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	f.createStatus = http.StatusUnprocessableEntity
+	f.askStatus = http.StatusTooManyRequests
+	synctest.Test(t, func(t *testing.T) {
+		if out := hookWith(f, dialogs, away(), nil, claudePermission); out != nil || len(f.notices()) != 1 {
+			t.Errorf("stdout %s, notices %+v", out, f.notices())
+		}
+		time.Sleep(6 * time.Second)
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+	})
+	if n := f.notices(); len(n) != 1 || n[0]["title"] != "Claude Code needs you" || n[0]["body"] != waitingText {
+		t.Errorf("notices %+v", n)
+	}
+}
+
+// A claude -p run has no one at its terminal, and Claude Code denies the
+// prompt the hook leaves there, so nothing says it waits.
+func TestUnattendedPromptGetsNoNotice(t *testing.T) {
+	f := newFakeAPI()
+	f.createStatus = http.StatusUnprocessableEntity
+	f.askStatus = http.StatusTooManyRequests
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := newRunner(f, away())
+		r.Dialogs = filepath.Join(t.TempDir(), "agent-dialogs")
+		r.Getenv = func(k string) string {
+			if k == "CLAUDE_CODE_SESSION_ATTENDED" {
+				return "0"
+			}
+			return ""
+		}
+		if out := r.Hook(context.Background(), Claude, strings.NewReader(claudePermission)); out != nil || len(f.notices()) != 0 {
+			t.Errorf("stdout %s, notices %+v", out, f.notices())
+		}
+	})
+}
+
+// A notice sent while Claude Code waits to show its dialog gives up after
+// noticeWithin, and a notice that did not go out leaves no file.
+func TestDialogNoticeDoesNotHoldTheDialog(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	plan := strings.Replace(claudePermission, `"tool_name":"Bash"`, `"tool_name":"ExitPlanMode"`, 1)
+	f := newFakeAPI()
+	f.noticeDelay = time.Minute
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		hookWith(f, dialogs, away(), nil, plan)
+		if d := time.Since(start); d > noticeWithin {
+			t.Errorf("the plan's hook took %s", d)
+		}
+	})
+	if left, err := os.ReadDir(dialogs); len(left) != 0 {
+		t.Errorf("dialog files %v %v", left, err)
+	}
+}
+
+// A prompt that showed at the desk left no file: its permission_prompt
+// notifies when the user has left meanwhile.
+func TestPromptAtTheDeskThenAway(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	atDesk := true
+	idle := func(context.Context) (time.Duration, error) {
+		if atDesk {
+			return time.Second, nil
+		}
+		return time.Hour, nil
+	}
+	synctest.Test(t, func(t *testing.T) {
+		if out := hookWith(f, dialogs, DefaultOptions(), idle, claudePermission); out != nil || len(f.calls) != 0 {
+			t.Errorf("at the desk: stdout %s, %d requests", out, len(f.calls))
+		}
+		atDesk = false
+		time.Sleep(6 * time.Second)
+		hookWith(f, dialogs, DefaultOptions(), idle, permissionPrompt("sess-1"))
+	})
+	if n := f.notices(); len(n) != 1 {
+		t.Errorf("notices %+v", n)
 	}
 }
 
@@ -335,7 +610,7 @@ func TestFallbackNotificationWins(t *testing.T) {
 			t.Errorf("notification %s = %v, want %v", k, n[k], v)
 		}
 	}
-	if got := mustJSON(t, n["actions"]); got != `[{"id":"allow","title":"Allow"},{"id":"always","title":"Always allow"},{"destructive":true,"id":"deny","title":"Deny"}]` {
+	if got := mustJSON(t, n["actions"]); got != `[{"authentication_required":true,"id":"allow","title":"Allow"},{"authentication_required":true,"id":"always","title":"Always allow"},{"destructive":true,"id":"deny","title":"Deny"}]` {
 		t.Errorf("actions %s", got)
 	}
 	if !f.ended() {
@@ -468,7 +743,7 @@ func TestViaNotification(t *testing.T) {
 	if len(f.sent("POST", "/activities")) != 0 {
 		t.Error("--via notification created a card")
 	}
-	if got := mustJSON(t, f.asked()[0]["actions"]); got != `[{"id":"allow","title":"Allow"},{"destructive":true,"id":"deny","title":"Deny"}]` {
+	if got := mustJSON(t, f.asked()[0]["actions"]); got != `[{"authentication_required":true,"id":"allow","title":"Allow"},{"destructive":true,"id":"deny","title":"Deny"}]` {
 		t.Errorf("actions %s", got)
 	}
 }
@@ -587,6 +862,103 @@ func TestQuestionTooWideForTheCard(t *testing.T) {
 	}
 	if len(f.asked()) != 1 || f.asked()[0]["title"] != "Claude Code asks (2/3)" {
 		t.Errorf("notifications %+v", f.asked())
+	}
+}
+
+// Options whose titles come out the same once cut to a card button (or
+// differ only in case) cannot be told apart on the card: the question goes
+// out as a notification, whose buttons have room for the labels. With --via
+// card it stays in the terminal.
+func TestSameCutTitlesSkipTheCard(t *testing.T) {
+	for name, opts := range map[string]string{
+		"cut":  `[{"label":"Deploy to production right now","description":""},{"label":"Deploy to production after lunch","description":""}]`,
+		"case": `[{"label":"Yes","description":""},{"label":"yes","description":""}]`,
+	} {
+		q := `[{"question":"When?","header":"Deploy","options":` + opts + `,"multiSelect":false}]`
+		f := newFakeAPI()
+		f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "q1o2", "", time.Second }
+		out, logs := run(t, f, away(), nil, Claude, askInput(q))
+		if !strings.Contains(out, `"answers":{"When?":`) || f.act != nil || len(f.asked()) != 1 {
+			t.Fatalf("%s: stdout %s, card %v, %d notifications\nlog:\n%s", name, out, f.act != nil, len(f.asked()), logs)
+		}
+		titles := mustJSON(t, f.asked()[0]["actions"])
+		if name == "cut" && !strings.Contains(titles, `"title":"Deploy to production right now"`) {
+			t.Errorf("%s: actions %s", name, titles)
+		}
+
+		f = newFakeAPI()
+		o := away()
+		o.Via = "card"
+		if out, _ := run(t, f, o, nil, Claude, askInput(q)); out != "" || f.act != nil || len(f.asked()) != 0 {
+			t.Errorf("%s --via card: stdout %q, card %v, %d notifications", name, out, f.act != nil, len(f.asked()))
+		}
+	}
+}
+
+// Credentials in a command, a question or the last message are masked on the
+// card and in the notifications; what goes back to the agent is as it came.
+func TestSecretsAreMaskedOnTheWayOut(t *testing.T) {
+	secret := "hunter" + "2-x9"
+	in := strings.Replace(claudePermission, bashCommand, "mysql --password="+secret+" -e 'drop table users'", 1)
+	f := newFakeAPI()
+	f.started = 0
+	f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "allow", "", 20 * time.Second }
+	if out, _ := run(t, f, away(), nil, Claude, in); out != allowOut {
+		t.Fatalf("stdout %s", out)
+	}
+	if got := mustJSON(t, f.steps()[0]["details"]); got != `[{"label":"Bash","value":"mysql --password=*** -e 'drop table users'"}]` {
+		t.Errorf("details %s", got)
+	}
+	if got := f.asked()[0]["body"]; got != "Run: mysql --password=*** -e 'drop table users'" {
+		t.Errorf("notification body %v", got)
+	}
+
+	q := `[{"question":"Use API_KEY=` + secret + ` for prod?","header":"Key","options":[{"label":"Yes","description":"token: ` + secret + `"},{"label":"No","description":""}],"multiSelect":false}]`
+	f = newFakeAPI()
+	f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "q1o1", "", time.Second }
+	o := away()
+	o.Via = "notification"
+	out, _ := run(t, f, o, nil, Claude, askInput(q))
+	if got := f.asked()[0]["body"]; got != "Use API_KEY=*** for prod?\nYes: token: ***" {
+		t.Errorf("question body %q", got)
+	}
+	// The questions go back unmasked, the answer keyed by the real text.
+	if !strings.Contains(out, `"answers":{"Use API_KEY=`+secret+` for prod?":"Yes"}`) || !strings.Contains(out, `"description":"token: `+secret+`"`) {
+		t.Errorf("stdout %s", out)
+	}
+	f = newFakeAPI()
+	run(t, f, away(), nil, Claude, askInput(q))
+	if s := f.steps()[0]["state"]; s != "Use API_KEY=*** for prod?" {
+		t.Errorf("card state %v", s)
+	}
+
+	// Option labels are masked on the card's buttons and the notification's;
+	// the agent gets the label back as it was.
+	label := "Use " + fakeGitHub
+	q = `[{"question":"Which one?","header":"Key","options":[{"label":"` + label + `","description":""},{"label":"PASSWORD=` + secret + `","description":""}],"multiSelect":false}]`
+	f = newFakeAPI()
+	f.cardAnswer = answerCard("q1o1", time.Second)
+	out, _ = run(t, f, away(), nil, Claude, askInput(q))
+	if got := mustJSON(t, f.steps()[0]["options"]); got != `[{"id":"q1o1","title":"Use ***"},{"id":"q1o2","title":"PASSWORD=***"}]` {
+		t.Errorf("card options %s", got)
+	}
+	if !strings.Contains(out, `"answers":{"Which one?":"`+label+`"}`) {
+		t.Errorf("stdout %s", out)
+	}
+	f = newFakeAPI()
+	f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "q1o2", "", time.Second }
+	out, _ = run(t, f, o, nil, Claude, askInput(q))
+	if got := mustJSON(t, f.asked()[0]["actions"]); !strings.HasPrefix(got, `[{"id":"q1o1","title":"Use ***"},{"id":"q1o2","title":"PASSWORD=***"},`) {
+		t.Errorf("notification actions %s", got)
+	}
+	if !strings.Contains(out, `"answers":{"Which one?":"PASSWORD=`+secret+`"}`) {
+		t.Errorf("stdout %s", out)
+	}
+
+	f = newFakeAPI()
+	run(t, f, away(), nil, Codex, `{"session_id":"s","cwd":"/w","hook_event_name":"Stop","last_assistant_message":"Set DB_PASSWORD=`+secret+` in .env"}`)
+	if n := f.notices(); len(n) != 1 || n[0]["body"] != "Set DB_PASSWORD=*** in .env" {
+		t.Errorf("notices %+v", n)
 	}
 }
 
@@ -786,12 +1158,15 @@ func TestInputMidWaitHandsBack(t *testing.T) {
 		}
 		return time.Second, nil
 	}
-	out, logs := run(t, f, DefaultOptions(), idle, Claude, claudePermission)
+	// The user is back at the prompt: no notice, even with --notices always.
+	o := DefaultOptions()
+	o.Notices = "always"
+	out, logs := run(t, f, o, idle, Claude, claudePermission)
 	if out != "" {
 		t.Fatalf("stdout %s", out)
 	}
-	if !f.ended() || !strings.Contains(logs, "input at the desk") {
-		t.Errorf("card ended %v; log:\n%s", f.ended(), logs)
+	if !f.ended() || !strings.Contains(logs, "input at the desk") || len(f.notices()) != 0 {
+		t.Errorf("card ended %v, notices %+v; log:\n%s", f.ended(), f.notices(), logs)
 	}
 }
 
@@ -809,6 +1184,10 @@ func TestMaxWait(t *testing.T) {
 		}
 		if !f.ended() {
 			t.Errorf("%s: the card was left up", onTimeout)
+		}
+		// A prompt left in the terminal gets a notice; a denied one does not.
+		if n := f.notices(); (onTimeout == "none") != (len(n) == 1 && n[0]["body"] == waitingText) || len(n) > 1 {
+			t.Errorf("%s: notices %+v", onTimeout, n)
 		}
 	}
 	// A question times out into a PreToolUse deny.
@@ -835,6 +1214,25 @@ func TestCancelledCleansUp(t *testing.T) {
 	if out != "" || !f.ended() || len(f.retracted()) != 1 {
 		t.Errorf("stdout %q, ended %v, retracted %v", out, f.ended(), f.retracted())
 	}
+}
+
+// Esc ends the turn before Claude Code's 6 seconds, so no permission_prompt
+// follows: the session's next one still notifies.
+func TestCancelledDoesNotSwallowLaterPrompt(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := newRunner(f, away())
+		r.Dialogs = dialogs
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		r.Hook(ctx, Claude, strings.NewReader(claudePermission))
+		time.Sleep(10 * time.Second)
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		if n := len(f.notices()); n != 1 {
+			t.Errorf("%d notices, want 1", n)
+		}
+	})
 }
 
 func TestErrorsPrintNothing(t *testing.T) {
@@ -885,14 +1283,41 @@ func TestNotices(t *testing.T) {
 	}
 
 	// idle_prompt comes a minute after Stop, which already sent a notice
-	// with the same collapse id; an older install still sends it.
-	for typ, want := range map[string]int{"idle_prompt": 0, "agent_needs_input": 1, "permission_prompt": 0, "auth_success": 0} {
+	// with the same collapse id; an older install still sends it. A prompt
+	// left in the terminal (handed back, or timed out) gets one while away.
+	for typ, want := range map[string]int{"idle_prompt": 0, "agent_needs_input": 1, "permission_prompt": 1, "auth_success": 0} {
 		f = newFakeAPI()
-		run(t, f, away(), nil, Claude, `{"session_id":"s","hook_event_name":"Notification","message":"Claude is waiting for your input","notification_type":"`+typ+`"}`)
+		run(t, f, away(), nil, Claude, `{"session_id":"s","hook_event_name":"Notification","message":"Claude needs your permission to use Bash","notification_type":"`+typ+`"}`)
 		if got := len(f.notices()); got != want {
 			t.Errorf("%s: %d notices", typ, got)
-		} else if want == 1 && f.notices()[0]["title"] != "Claude Code needs you" {
+		} else if want == 1 && (f.notices()[0]["title"] != "Claude Code needs you" || f.notices()[0]["body"] != "Claude needs your permission to use Bash") {
 			t.Errorf("%s: %+v", typ, f.notices())
+		}
+	}
+	f = newFakeAPI()
+	run(t, f, away(), nil, Claude, `{"session_id":"s","hook_event_name":"Notification","notification_type":"permission_prompt"}`)
+	if n := f.notices(); len(n) != 1 || n[0]["body"] != "A prompt is waiting in the terminal" {
+		t.Errorf("permission_prompt with no message: %+v", n)
+	}
+	// A prompt at the desk is in front of the user, even with --notices
+	// always; --notices off sends nothing away from it either.
+	for _, c := range []struct {
+		desk, notices string
+		typ           string
+		want          int
+	}{
+		{"desk", "always", "permission_prompt", 0},
+		{"desk", "always", "agent_needs_input", 1},
+		{"desk", "away", "permission_prompt", 0},
+		{"away", "off", "permission_prompt", 0},
+		{"away", "always", "permission_prompt", 1},
+	} {
+		f = newFakeAPI()
+		o := DefaultOptions()
+		o.Desk, o.Notices = c.desk, c.notices
+		run(t, f, o, nil, Claude, `{"session_id":"s","hook_event_name":"Notification","message":"m","notification_type":"`+c.typ+`"}`)
+		if got := len(f.notices()); got != c.want {
+			t.Errorf("%s --desk %s --notices %s: %d notices", c.typ, c.desk, c.notices, got)
 		}
 	}
 

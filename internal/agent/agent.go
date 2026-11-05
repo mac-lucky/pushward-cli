@@ -50,10 +50,10 @@ type Options struct {
 	MaxWait time.Duration
 	// OnTimeout is none (hand the prompt back to the terminal) or deny.
 	OnTimeout string
-	// DeskIdle is how long the Mac must have had no input before the user
-	// counts as away from it.
+	// DeskIdle is how long the computer, or on Linux the agent's terminal,
+	// must have had no input before the user counts as away from it.
 	DeskIdle time.Duration
-	// Desk is auto (probe the Mac), away or desk.
+	// Desk is auto (read the idle time), away or desk.
 	Desk string
 	// Via is auto (a card, a notification when no device shows it), card
 	// or notification.
@@ -111,6 +111,13 @@ type Runner struct {
 	// KeyCache, when set, lets a key that passed the check in the last hour
 	// skip it.
 	KeyCache *KeyCache
+	// Dialogs, when set, is the directory where hooks leave a file for each
+	// dialog they take to the phone or send a notice for, so the
+	// permission_prompt Claude Code sends for that dialog is not pushed again.
+	Dialogs string
+	// Getenv reads the agent's environment, which the hook inherits; nil
+	// reads the process's own.
+	Getenv func(string) string
 
 	keyOnce sync.Once
 	keyErr  error

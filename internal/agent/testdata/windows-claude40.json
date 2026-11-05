@@ -1,0 +1,85 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\a b\\bin\\pushward.exe",
+            "args": [
+              "agent",
+              "hook",
+              "claude",
+              "--max-wait",
+              "40m0s"
+            ],
+            "timeout": 2460,
+            "statusMessage": "Asked on your phone with PushWard. Touch the keyboard or mouse to answer here instead.",
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\a b\\bin\\pushward.exe",
+            "args": [
+              "agent",
+              "hook",
+              "claude",
+              "--max-wait",
+              "40m0s"
+            ],
+            "timeout": 2460,
+            "statusMessage": "Asked on your phone with PushWard. Touch the keyboard or mouse to answer here instead.",
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "agent_needs_input|permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\a b\\bin\\pushward.exe",
+            "args": [
+              "agent",
+              "hook",
+              "claude",
+              "--max-wait",
+              "40m0s"
+            ],
+            "async": true,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\Users\\a b\\bin\\pushward.exe",
+            "args": [
+              "agent",
+              "hook",
+              "claude",
+              "--max-wait",
+              "40m0s"
+            ],
+            "async": true,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ]
+  }
+}

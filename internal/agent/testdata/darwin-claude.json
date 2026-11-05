@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/bin/pushward agent hook claude",
+            "timeout": 1560,
+            "statusMessage": "Asked on your phone with PushWard. Press Space in this terminal to answer here instead (Esc stops the turn)."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/bin/pushward agent hook claude",
+            "timeout": 1560,
+            "statusMessage": "Asked on your phone with PushWard. Press Space in this terminal to answer here instead (Esc stops the turn)."
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "agent_needs_input|permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/bin/pushward agent hook claude",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/bin/pushward agent hook claude",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

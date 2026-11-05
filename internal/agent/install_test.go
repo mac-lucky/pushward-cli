@@ -60,7 +60,13 @@ const claudeSettings = `{
 }
 `
 
-const claudeCommand = "/opt/homebrew/bin/pushward agent hook claude"
+const (
+	claudeExe     = "/opt/homebrew/bin/pushward"
+	claudeCommand = claudeExe + " agent hook claude"
+	// testOS is the system the install tests write the hooks for, so they
+	// read the same on every system they run on.
+	testOS = "darwin"
+)
 
 func writeSettings(t *testing.T, content string) string {
 	t.Helper()
@@ -80,9 +86,9 @@ func read(t *testing.T, path string) string {
 	return string(b)
 }
 
-func install(t *testing.T, path string, agent Agent, command string) Plan {
+func install(t *testing.T, path string, agent Agent, exe string) Plan {
 	t.Helper()
-	p, err := PlanInstall(path, agent, command, DefaultMaxWait)
+	p, err := PlanInstall(path, agent, exe, DefaultMaxWait, testOS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +100,7 @@ func install(t *testing.T, path string, agent Agent, command string) Plan {
 
 func TestInstallClaude(t *testing.T) {
 	path := writeSettings(t, claudeSettings)
-	p := install(t, path, Claude, claudeCommand)
+	p := install(t, path, Claude, claudeExe)
 	if !p.Changed() {
 		t.Fatal("install changed nothing")
 	}
@@ -161,7 +167,7 @@ func TestInstallClaude(t *testing.T) {
     ],
     "Notification": [
       {
-        "matcher": "agent_needs_input",
+        "matcher": "agent_needs_input|permission_prompt",
         "hooks": [
           {
             "type": "command",
@@ -173,7 +179,7 @@ func TestInstallClaude(t *testing.T) {
     ]
   },`).Replace(claudeSettings)
 	// The two hooks that wait on the phone say so in Claude Code's spinner.
-	status, _ := json.Marshal(waitingStatus(runtime.GOOS))
+	status, _ := json.Marshal(waitingStatus(testOS))
 	want = strings.ReplaceAll(want, "\"timeout\": 1560\n", "\"timeout\": 1560,\n            \"statusMessage\": "+string(status)+"\n")
 	if got != want {
 		t.Errorf("settings after install:\n%s\nwant:\n%s", got, want)
@@ -185,7 +191,7 @@ func TestInstallClaude(t *testing.T) {
 	}
 
 	// Again: nothing changes, and the backup of the original stays.
-	if p := install(t, path, Claude, claudeCommand); p.Changed() {
+	if p := install(t, path, Claude, claudeExe); p.Changed() {
 		t.Errorf("a second install changed the file:\n%s", p.After)
 	}
 	if read(t, path) != want || read(t, path+".bak") != claudeSettings {
@@ -202,7 +208,7 @@ func TestInstallClaude(t *testing.T) {
 
 	// A moved binary: the entry is updated in place, not added twice, and
 	// the backup stays the file from before the first install.
-	p, err = PlanInstall(path, Claude, "/usr/local/bin/pushward agent hook claude", DefaultMaxWait)
+	p, err = PlanInstall(path, Claude, "/usr/local/bin/pushward", DefaultMaxWait, testOS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,8 +261,7 @@ func TestInstallCodex(t *testing.T) {
 }
 `
 	path := writeSettings(t, hooks)
-	command := "/home/linuxbrew/.linuxbrew/bin/pushward agent hook codex"
-	p, err := PlanInstall(path, Codex, command, 40*time.Minute)
+	p, err := PlanInstall(path, Codex, "/home/linuxbrew/.linuxbrew/bin/pushward", 40*time.Minute, testOS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +277,7 @@ func TestInstallCodex(t *testing.T) {
         "hooks": [
           {
             "type": "command",
-            "command": "/home/linuxbrew/.linuxbrew/bin/pushward agent hook codex",
+            "command": "/home/linuxbrew/.linuxbrew/bin/pushward agent hook codex --max-wait 40m0s",
             "timeout": 2460
           }
         ]
@@ -283,7 +288,7 @@ func TestInstallCodex(t *testing.T) {
         "hooks": [
           {
             "type": "command",
-            "command": "/home/linuxbrew/.linuxbrew/bin/pushward agent hook codex",
+            "command": "/home/linuxbrew/.linuxbrew/bin/pushward agent hook codex --max-wait 40m0s",
             "timeout": 60,
             "async": true
           }
@@ -313,7 +318,7 @@ func TestInstallCodex(t *testing.T) {
 
 func TestInstallCreatesTheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "codex", "hooks.json")
-	p := install(t, path, Codex, "pushward agent hook codex")
+	p := install(t, path, Codex, "pushward")
 	if p.Before != nil || !p.Changed() {
 		t.Fatalf("plan %+v", p)
 	}
@@ -345,7 +350,7 @@ func TestInstallFollowsSymlinks(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	install(t, link, Claude, claudeCommand)
+	install(t, link, Claude, claudeExe)
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("the link was replaced: %v %v", info, err)
 	}
@@ -357,7 +362,7 @@ func TestInstallFollowsSymlinks(t *testing.T) {
 func TestInstallRefusesWhatItCannotMerge(t *testing.T) {
 	for _, content := range []string{`[1, 2]`, `{"hooks": []}`, `{"hooks": {"Stop": {}}}`, `{"a": 1} trailing`} {
 		path := writeSettings(t, content)
-		if _, err := PlanInstall(path, Claude, claudeCommand, DefaultMaxWait); err == nil {
+		if _, err := PlanInstall(path, Claude, claudeExe, DefaultMaxWait, testOS); err == nil {
 			t.Errorf("%s: merged", content)
 		}
 		if read(t, path) != content {
@@ -407,27 +412,29 @@ func TestStablePath(t *testing.T) {
 	}
 }
 
-// An install from before idle_prompt was dropped gets the new matcher, once;
-// a group that also runs someone else's hook keeps the matcher it has.
+// An install from before idle_prompt was dropped, or from before
+// permission_prompt was added, gets the new matcher, once; a group that also
+// runs someone else's hook keeps the matcher it has.
 func TestInstallUpdatesTheOldMatcher(t *testing.T) {
 	path := writeSettings(t, "{}\n")
-	install(t, path, Claude, claudeCommand)
+	install(t, path, Claude, claudeExe)
 	current := read(t, path)
-	old := strings.Replace(current, `"matcher": "agent_needs_input"`, `"matcher": "idle_prompt|agent_needs_input"`, 1)
-	if old == current {
-		t.Fatal("no Notification matcher to age")
-	}
-	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if p := install(t, path, Claude, claudeCommand); !p.Changed() || read(t, path) != current {
-		t.Fatalf("after install over the old matcher:\n%s\nwant:\n%s", read(t, path), current)
-	}
-	if p := install(t, path, Claude, claudeCommand); p.Changed() {
-		t.Errorf("a second install changed the file:\n%s", p.After)
-	}
+	for _, matcher := range []string{"idle_prompt|agent_needs_input", "agent_needs_input"} {
+		old := strings.Replace(current, `"matcher": "agent_needs_input|permission_prompt"`, `"matcher": "`+matcher+`"`, 1)
+		if old == current {
+			t.Fatal("no Notification matcher to age")
+		}
+		if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if p := install(t, path, Claude, claudeExe); !p.Changed() || read(t, path) != current {
+			t.Fatalf("after install over %q:\n%s\nwant:\n%s", matcher, read(t, path), current)
+		}
+		if p := install(t, path, Claude, claudeExe); p.Changed() {
+			t.Errorf("a second install changed the file:\n%s", p.After)
+		}
 
-	shared := strings.Replace(old, `"command": "`+claudeCommand+`",
+		shared := strings.Replace(old, `"command": "`+claudeCommand+`",
             "async": true
           }
         ]
@@ -442,14 +449,18 @@ func TestInstallUpdatesTheOldMatcher(t *testing.T) {
         ]
       }
     ]`, 1)
-	if shared == old {
-		t.Fatal("no Notification group to share")
-	}
-	if err := os.WriteFile(path, []byte(shared), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if p := install(t, path, Claude, claudeCommand); p.Changed() {
-		t.Errorf("install changed a group it shares with another hook:\n%s", p.After)
+		if shared == old {
+			t.Fatal("no Notification group to share")
+		}
+		if err := os.WriteFile(path, []byte(shared), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if p := install(t, path, Claude, claudeExe); p.Changed() {
+			t.Errorf("install changed a group it shares with another hook:\n%s", p.After)
+		}
+		if err := os.WriteFile(path, []byte(current), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -475,7 +486,7 @@ func TestInstallKeepsAWrappedCommand(t *testing.T) {
 }
 `
 	path := writeSettings(t, content)
-	p, err := PlanInstall(path, Claude, claudeCommand+" --max-wait 40m0s", 40*time.Minute)
+	p, err := PlanInstall(path, Claude, claudeExe, 40*time.Minute, testOS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,6 +522,18 @@ func TestInstallKeepsAWrappedCommand(t *testing.T) {
 			t.Errorf("wrapped(%q) = %v", cmd, got)
 		}
 	}
+	// What install writes on Windows is not wrapped either.
+	for h, want := range map[string]bool{
+		`{"command":"C:\\pushward.exe","args":["agent","hook","claude"]}`:                       false,
+		`{"command":"C:\\pushward.exe","args":["agent","hook","claude","--max-wait","40m0s"]}`:  false,
+		`{"command":"\"C:\\Program Files\\pushward\\pushward.exe\" agent hook codex"}`:          false,
+		`{"command":"op","args":["run","--","C:\\pushward.exe","agent","hook","claude"]}`:       true,
+		`{"command":"C:\\pushward.exe","args":["agent","hook","claude","--on-timeout","deny"]}`: true,
+	} {
+		if got := wrapped(json.RawMessage(h)); got != want {
+			t.Errorf("wrapped(%s) = %v", h, got)
+		}
+	}
 }
 
 // A file in another layout keeps it, so uninstall gives back its bytes.
@@ -526,7 +549,7 @@ func TestInstallKeepsTheLayout(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeSettings(t, content)
-			install(t, path, Claude, claudeCommand)
+			install(t, path, Claude, claudeExe)
 			got := read(t, path)
 			switch name {
 			case "four spaces":
@@ -557,5 +580,94 @@ func TestInstallKeepsTheLayout(t *testing.T) {
 				t.Errorf("after uninstall:\n%q\nwant:\n%q", got, content)
 			}
 		})
+	}
+}
+
+// The hooks install writes into an empty file, for each system it writes
+// them for. The macOS and Linux files are what 1.8 wrote but for the
+// Notification matcher and the spinner text on Linux: Codex trusts a hook
+// by its command, so a command that changed would have to be trusted again.
+func TestInstallGolden(t *testing.T) {
+	const winExe = `C:\Users\me\scoop\apps\pushward\current\pushward.exe`
+	for _, c := range []struct {
+		goos, name, exe string
+		agent           Agent
+		maxWait         time.Duration
+	}{
+		{"darwin", "claude", claudeExe, Claude, DefaultMaxWait},
+		{"darwin", "claude40", "/Users/a b/bin/pushward", Claude, 40 * time.Minute},
+		{"darwin", "codex", claudeExe, Codex, DefaultMaxWait},
+		{"darwin", "codex40", claudeExe, Codex, 40 * time.Minute},
+		{"linux", "claude", claudeExe, Claude, DefaultMaxWait},
+		{"linux", "claude40", "/Users/a b/bin/pushward", Claude, 40 * time.Minute},
+		{"linux", "codex", claudeExe, Codex, DefaultMaxWait},
+		{"linux", "codex40", claudeExe, Codex, 40 * time.Minute},
+		{"windows", "claude", winExe, Claude, DefaultMaxWait},
+		{"windows", "claude40", `C:\Users\a b\bin\pushward.exe`, Claude, 40 * time.Minute},
+		{"windows", "codex", winExe, Codex, DefaultMaxWait},
+		{"windows", "codex40", winExe, Codex, 40 * time.Minute},
+	} {
+		p, err := PlanInstall(filepath.Join(t.TempDir(), "hooks.json"), c.agent, c.exe, c.maxWait, c.goos)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A checkout on Windows may have turned the newlines into CRLF.
+		want := strings.ReplaceAll(read(t, filepath.Join("testdata", c.goos+"-"+c.name+".json")), "\r\n", "\n")
+		if string(p.After) != want {
+			t.Errorf("%s %s:\n%s\nwant:\n%s", c.goos, c.name, p.After, want)
+		}
+	}
+}
+
+// On Windows an install from 1.8, which wrote the POSIX command line there
+// too, is moved to the forms the agents can run, in place; status and
+// uninstall find them.
+func TestInstallWindows(t *testing.T) {
+	const exe = `C:\Users\me\scoop\apps\pushward\current\pushward.exe`
+	for _, c := range []struct {
+		agent  Agent
+		golden string
+		events string
+	}{
+		{Claude, "windows-claude.json", "PermissionRequest,PreToolUse,Notification,Stop"},
+		{Codex, "windows-codex.json", "PermissionRequest,Stop"},
+	} {
+		path := writeSettings(t, "{}\n")
+		// 1.8 quoted the path for a POSIX shell, with the old matcher and the
+		// spinner text that any system but these three still gets.
+		p, err := PlanInstall(path, c.agent, exe, DefaultMaxWait, "plan9")
+		if err != nil {
+			t.Fatal(err)
+		}
+		old := strings.Replace(string(p.After), "agent_needs_input|permission_prompt", "agent_needs_input", 1)
+		if !strings.Contains(old, `"'C:\\Users\\me\\scoop\\apps\\pushward\\current\\pushward.exe' agent hook `) {
+			t.Fatalf("not the 1.8 line:\n%s", old)
+		}
+		if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		p, err = PlanInstall(path, c.agent, exe, DefaultMaxWait, "windows")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := p.Apply(); err != nil {
+			t.Fatal(err)
+		}
+		if want := strings.ReplaceAll(read(t, filepath.Join("testdata", c.golden)), "\r\n", "\n"); read(t, path) != want {
+			t.Errorf("%s after the upgrade:\n%s\nwant:\n%s", c.agent, read(t, path), want)
+		}
+		if p, _ := PlanInstall(path, c.agent, exe, DefaultMaxWait, "windows"); p.Changed() {
+			t.Errorf("%s: a second install changed the file:\n%s", c.agent, p.After)
+		}
+		if events, err := Installed(path, c.agent); err != nil || strings.Join(events, ",") != c.events {
+			t.Errorf("%s installed %v %v", c.agent, events, err)
+		}
+		p, err = PlanUninstall(path, c.agent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(p.After) != "{}\n" {
+			t.Errorf("%s after uninstall:\n%s", c.agent, p.After)
+		}
 	}
 }

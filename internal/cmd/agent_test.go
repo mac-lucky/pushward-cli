@@ -1,13 +1,18 @@
 package cmd
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mac-lucky/pushward-cli/internal/agent"
 )
 
 const hookPermission = `{"session_id":"s1","cwd":"/home/u/webapp","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"make deploy"}}`
@@ -266,14 +271,24 @@ func TestAgentHookRemembersTheKeyCheck(t *testing.T) {
 
 func TestAgentInstallCommand(t *testing.T) {
 	_, srv := newFake(t)
-	dir := t.TempDir()
+	// Install prints the path with symlinks resolved (/private/var on macOS)
+	// and, on Windows, short names such as RUNNER~1 spelled out.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	settings := filepath.Join(dir, "settings.json")
 	if err := os.WriteFile(settings, []byte("{\n  \"model\": \"opus\"\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
+	// A command line on macOS and Linux; on Windows the program and its args.
+	hook, hook40 := ` agent hook claude"`, ` agent hook claude --max-wait 40m0s"`
+	if runtime.GOOS == "windows" {
+		hook, hook40 = `"claude"`, `"40m0s"`
+	}
 	r := runCLI(t, srv, nil, "", "agent", "install", "claude", "--settings", settings, "--dry-run")
-	if r.code != 0 || !strings.Contains(r.stdout, " agent hook claude\"") || !strings.Contains(r.stdout, `"timeout": 1560`) {
+	if r.code != 0 || !strings.Contains(r.stdout, hook) || !strings.Contains(r.stdout, `"timeout": 1560`) {
 		t.Fatalf("dry run: exit %d\n%s%s", r.code, r.stdout, r.stderr)
 	}
 	if b, _ := os.ReadFile(settings); string(b) != "{\n  \"model\": \"opus\"\n}\n" {
@@ -285,7 +300,7 @@ func TestAgentInstallCommand(t *testing.T) {
 		t.Fatalf("install: exit %d\n%s%s", r.code, r.stdout, r.stderr)
 	}
 	b, _ := os.ReadFile(settings)
-	if !strings.Contains(string(b), ` agent hook claude --max-wait 40m0s"`) || !strings.Contains(string(b), `"timeout": 2460`) {
+	if !strings.Contains(string(b), hook40) || !strings.Contains(string(b), `"timeout": 2460`) {
 		t.Errorf("settings:\n%s", b)
 	}
 	r = runCLI(t, srv, nil, "", "agent", "install", "claude", "--settings", settings, "--max-wait", "40m")
@@ -368,6 +383,28 @@ func TestAgentStatus(t *testing.T) {
 	f.reply("GET /auth/me", 401, `{"status":401,"code":"auth.invalid"}`)
 	if r = runCLI(t, srv, nil, "", "agent", "status"); r.code != ExitAuth || !strings.Contains(r.stdout, "refused") {
 		t.Errorf("refused key: exit %d\n%s", r.code, r.stdout)
+	}
+}
+
+// With no terminal to read (claude -p from cron, say) status says every
+// prompt goes to the phone.
+func TestAgentDeskState(t *testing.T) {
+	idle := func(d time.Duration, err error) agent.Idler {
+		return func(context.Context) (time.Duration, error) { return d, err }
+	}
+	for _, c := range []struct {
+		idle agent.Idler
+		want string
+	}{
+		{idle(0, agent.ErrNoTerminal), "no terminal to read: every prompt goes to the phone"},
+		{idle(0, os.ErrPermission), "could not read the idle time: prompts go to the phone"},
+		{idle(10*time.Second, nil), "at the desk (idle 10s): prompts stay in the terminal"},
+		{idle(5*time.Minute, nil), "away (idle 5m0s): prompts go to the phone"},
+		{nil, "no idle time to read here: every prompt goes to the phone"},
+	} {
+		if got := deskState(context.Background(), agent.DefaultOptions(), nil, c.idle); got != c.want {
+			t.Errorf("deskState = %q, want %q", got, c.want)
+		}
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -20,16 +21,31 @@ const (
 // permission answers a permission prompt: Claude Code's or Codex's
 // PermissionRequest.
 func (r *Runner) permission(ctx context.Context, agent Agent, in Input) []byte {
-	// AskUserQuestion is answered from PreToolUse; a plan review stays on
-	// the terminal.
-	if agent == Claude && (in.ToolName == "AskUserQuestion" || in.ToolName == "ExitPlanMode") {
-		return nil
+	if agent == Claude {
+		switch in.ToolName {
+		case "AskUserQuestion":
+			// Answered from PreToolUse.
+			return nil
+		case "ExitPlanMode":
+			// A plan review stays on the terminal, with a notice while away.
+			r.dialogNotice(ctx, in, "", "A plan is waiting for your review in the terminal")
+			return nil
+		}
 	}
 	if r.atDesk(ctx) {
 		return nil
 	}
+	dialog := ""
+	if agent == Claude {
+		// Before anything is sent, so the permission_prompt Claude Code sends
+		// 6 seconds in finds it however slow the sends are: this hook tells
+		// the user itself if the prompt is left in the terminal.
+		dialog = r.addDialog(in)
+	}
 	sum := in.summarize()
-	opts := []option{{id: "allow", title: "Allow", label: "Allow", style: "primary", icon: "mdi:check"}}
+	// Allowing asks for the phone to be unlocked; anyone holding a locked one
+	// can only refuse.
+	opts := []option{{id: "allow", title: "Allow", label: "Allow", style: "primary", icon: "mdi:check", unlock: true}}
 	// Claude Code applies the permission update it suggested when the
 	// answer is "always"; Codex fails closed on one, so it gets no such
 	// option.
@@ -40,7 +56,7 @@ func (r *Runner) permission(ctx context.Context, agent Agent, in Input) []byte {
 		if sessionOnly(always) {
 			title, label = "This session", "Allow for this session"
 		}
-		opts = append(opts, option{id: "always", title: title, label: label, style: "secondary", icon: "mdi:check-all"})
+		opts = append(opts, option{id: "always", title: title, label: label, style: "secondary", icon: "mdi:check-all", unlock: true})
 	}
 	opts = append(opts, option{id: "deny", title: "Deny", label: "Deny", style: "destructive", icon: "mdi:close", destructive: true})
 	// One row, the tool and what it acts on; the repo is the card's source.
@@ -50,14 +66,34 @@ func (r *Runner) permission(ctx context.Context, agent Agent, in Input) []byte {
 	}
 	rd := round{question: sum.state, title: agent.Name() + " asks", body: sum.text, options: opts, rows: rows}
 
-	replies, out := r.newAsk(agent, in).run(ctx, []round{rd})
+	a := r.newAsk(agent, in)
+	replies, out := a.run(ctx, []round{rd})
 	switch {
 	case out == answered:
+		r.answerDialog(dialog)
 		return permissionDecision(replies[0].option, always)
+	case out == cancelled:
+		// Esc in the terminal ended the turn, and the dialog with it.
+		r.answerDialog(dialog)
 	case out == timedOut && r.Opts.OnTimeout == "deny":
 		return permissionDenied(timeoutMessage)
+	case (out == timedOut || out == handedBack && !a.returned) && r.attended(agent):
+		// Left in the terminal with the user away, and nothing on the phone
+		// asks any more. Claude's permission_prompt takes the file above.
+		r.heldNotice(ctx, agent, in, "", waitingText)
 	}
 	return nil
+}
+
+// attended reports whether a person could answer in the agent's terminal:
+// Claude Code runs claude -p with CLAUDE_CODE_SESSION_ATTENDED=0 and denies
+// a prompt the hook leaves there itself.
+func (r *Runner) attended(agent Agent) bool {
+	getenv := r.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	return agent != Claude || getenv("CLAUDE_CODE_SESSION_ATTENDED") != "0"
 }
 
 // sessionOnly reports whether a permission update lasts only for the
@@ -89,7 +125,7 @@ func (r *Runner) questions(ctx context.Context, in Input) []byte {
 			// answers one option per tap, so the terminal asks the whole
 			// lot, starting with the first.
 			r.logf("a question takes several answers, leaving it to the terminal")
-			r.notice(ctx, in, Claude.Name()+" needs you", qs[0].Question, "A question is waiting in the terminal")
+			r.dialogNotice(ctx, in, qs[0].Question, "A question is waiting in the terminal")
 			return nil
 		}
 	}
@@ -129,7 +165,7 @@ func questionRounds(agent Agent, qs []question) []round {
 	rounds := make([]round, len(qs))
 	for i, q := range qs {
 		rd := round{
-			question: cut(oneLine(q.Question), 256),
+			question: cut(oneLine(maskSecrets(q.Question)), 256),
 			other:    fmt.Sprintf("q%dother", i+1),
 			steps:    steps,
 		}
@@ -143,7 +179,7 @@ func questionRounds(agent Agent, qs []question) []round {
 			if label == "" {
 				label = fmt.Sprintf("Option %d", j+1)
 			}
-			opt := option{id: fmt.Sprintf("q%do%d", i+1, j+1), title: cut(label, 24), label: o.Label}
+			opt := option{id: fmt.Sprintf("q%do%d", i+1, j+1), title: cut(maskSecrets(label), 24), label: o.Label}
 			if len(q.Options) >= 3 {
 				// The card needs an icon on every option once there are
 				// three; numbers read in order on its compact tiles.
@@ -154,7 +190,7 @@ func questionRounds(agent Agent, qs []question) []round {
 				body = append(body, label+": "+d)
 			}
 		}
-		rd.body = cut(strings.Join(body, "\n"), 256)
+		rd.body = cut(maskSecrets(strings.Join(body, "\n")), 256)
 		rounds[i] = rd
 	}
 	return rounds
