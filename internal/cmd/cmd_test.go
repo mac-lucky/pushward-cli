@@ -65,6 +65,7 @@ func newFake(t *testing.T) (*fakeAPI, *httptest.Server) {
 	t.Cleanup(srv.Close)
 	t.Setenv("PUSHWARD_CONFIG_DIR", t.TempDir())
 	t.Setenv("PUSHWARD_API_TOKEN", "hlk_test")
+	t.Setenv("PUSHWARD_ORG_API_TOKEN", "")
 	t.Setenv("PUSHWARD_API_URL", srv.URL)
 	return f, srv
 }

@@ -74,7 +74,7 @@ unsubscribed. Give a text body, an HTML body, or both; - reads stdin.
 	send.Flags().StringVar(&html, "html", "", "HTML body, or - for stdin")
 	send.Flags().StringVar(&htmlFile, "html-file", "", "read the HTML body from a file")
 	bf.register(send)
-	c.AddCommand(send)
+	c.AddCommand(send, newEmailRecipientCmd(a))
 	return group(c)
 }
 
@@ -98,7 +98,7 @@ func (a *App) bodyText(name, inline, file string) (string, error) {
 }
 
 func newMeCmd(a *App) *cobra.Command {
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:         "me",
 		Short:       "Show the account behind the key and its quotas",
 		Args:        checkArgs,
@@ -113,6 +113,8 @@ func newMeCmd(a *App) *cobra.Command {
 			})
 		},
 	}
+	c.AddCommand(newMeUpdateCmd(a), newMeOnboardingCmd(a))
+	return c
 }
 
 func writeMe(w io.Writer, u map[string]any) error {

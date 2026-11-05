@@ -72,6 +72,34 @@ func TestLoadWarnsOnOpenFile(t *testing.T) {
 	}
 }
 
+func TestLoadOrgToken(t *testing.T) {
+	t.Setenv(EnvConfig, t.TempDir())
+	t.Setenv(EnvToken, "")
+	t.Setenv(EnvOrgToken, "")
+	p, err := Write(File{OrgToken: "hlo_file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := Load(""); c.OrgToken != "hlo_file" || c.OrgTokenSource != p || c.Token != "" || c.TokenSource != "" {
+		t.Errorf("file: %+v", c)
+	}
+	t.Setenv(EnvOrgToken, " hlo_env\n")
+	if c, _ := Load(""); c.OrgToken != "hlo_env" || c.OrgTokenSource != "env" {
+		t.Errorf("env: %+v", c)
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	// The org admin key in a readable file gets the same warning.
+	t.Setenv(EnvOrgToken, "")
+	if err := os.Chmod(p, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := Load(""); !strings.Contains(c.Warning, "chmod 600") {
+		t.Errorf("warning = %q", c.Warning)
+	}
+}
+
 func TestValidateURL(t *testing.T) {
 	for raw, ok := range map[string]bool{
 		"https://api.pushward.app":  true,

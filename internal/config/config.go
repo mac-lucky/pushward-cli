@@ -1,6 +1,6 @@
-// Package config resolves the API URL, the integration key and the
-// end-to-end encryption key: environment first, then the file written by
-// `pushward auth login` and `pushward e2e`.
+// Package config resolves the API URL, the integration key, the org admin
+// key and the end-to-end encryption key: environment first, then the file
+// written by `pushward auth login` and `pushward e2e`.
 package config
 
 import (
@@ -19,11 +19,12 @@ import (
 )
 
 const (
-	EnvToken  = "PUSHWARD_API_TOKEN" // #nosec G101 -- the variable name, not a credential
-	EnvE2EKey = "PUSHWARD_E2E_KEY"
-	EnvURL    = "PUSHWARD_API_URL"
-	EnvConfig = "PUSHWARD_CONFIG_DIR"
-	fileName  = "config.json"
+	EnvToken    = "PUSHWARD_API_TOKEN"     // #nosec G101 -- the variable name, not a credential
+	EnvOrgToken = "PUSHWARD_ORG_API_TOKEN" // #nosec G101 -- the variable name, not a credential
+	EnvE2EKey   = "PUSHWARD_E2E_KEY"
+	EnvURL      = "PUSHWARD_API_URL"
+	EnvConfig   = "PUSHWARD_CONFIG_DIR"
+	fileName    = "config.json"
 )
 
 // File is the on-disk config. The token and the encryption key sit in a 0600
@@ -33,7 +34,9 @@ const (
 type File struct {
 	APIURL string `json:"api_url,omitempty"`
 	Token  string `json:"token,omitempty"`
-	E2EKey string `json:"e2e_key,omitempty"`
+	// OrgToken is the org admin key (hlo_), which only the org commands send.
+	OrgToken string `json:"org_token,omitempty"`
+	E2EKey   string `json:"e2e_key,omitempty"`
 }
 
 type Config struct {
@@ -42,6 +45,9 @@ type Config struct {
 	// TokenSource says where the token came from: "env", the config file
 	// path, or "" when there is none.
 	TokenSource string
+	// OrgToken and OrgTokenSource are the same for the org admin key.
+	OrgToken       string
+	OrgTokenSource string
 	// Warning is set when the config file is readable by other users.
 	Warning string
 }
@@ -151,6 +157,13 @@ func Load(apiURL string) (Config, error) {
 		c.Token, c.TokenSource = strings.TrimSpace(os.Getenv(EnvToken)), "env"
 	case f.Token != "":
 		c.Token, c.TokenSource = f.Token, p
+		c.Warning = openWarning(p)
+	}
+	switch {
+	case os.Getenv(EnvOrgToken) != "":
+		c.OrgToken, c.OrgTokenSource = strings.TrimSpace(os.Getenv(EnvOrgToken)), "env"
+	case f.OrgToken != "":
+		c.OrgToken, c.OrgTokenSource = f.OrgToken, p
 		c.Warning = openWarning(p)
 	}
 	u, err := ValidateURL(c.APIURL)

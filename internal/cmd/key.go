@@ -25,8 +25,10 @@ Each key has a level per resource: --activities none|read|update|manage,
 --emails=none|send (those three take their level after =). On their own, a
 bare flag or =true keeps its old meaning (the highest level; for
 --notifications, send when the default key itself can only send) and =false
-means none; next to another level flag each needs a level of its own. A key
-can also be limited to activity and widget slugs and given an expiry.
+means none; next to another level flag each needs a level of its own.
+--devices, --sharing and --account none|read|manage reach the account's own
+devices, shares and settings. A key can also be limited to activity and
+widget slugs and given an expiry.
 
   pushward key create backup --notifications=send --activity-slugs 'backup-*' --jq .key
   pushward key create alerts --activities none --notifications=send
@@ -59,7 +61,15 @@ var keyLevels = []struct {
 	{"notifications", []string{"none", "send", "schedule"}, true, "notification level: none, send, or schedule (also scheduled notifications); a bare --notifications on its own is the legacy true"},
 	{"widgets", []string{"none", "read", "write"}, true, "widget level: none, read, or write (also create, update and delete); a bare --widgets on its own means write"},
 	{"emails", []string{"none", "send"}, true, "email level: none or send; a bare --emails on its own means send"},
+	// Levels for the account's own settings; an organization key has none of them.
+	{"devices", []string{"none", "read", "manage"}, false, "device level: none, read (devices and what they follow) or manage (also rename, remove, follow and unfollow)"},
+	{"sharing", []string{"none", "read", "manage"}, false, "sharing level: none, read (list shares) or manage (also grant, change and revoke them)"},
+	{"account", []string{"none", "read", "manage"}, false, "account level: none, read (onboarding, email recipients) or manage (also nickname, setup tips and recipients)"},
 }
+
+// orgKeyLevels are the levels an organization key can have, the ones before
+// the account settings.
+var orgKeyLevels = keyLevels[:4]
 
 // keyArgs is checkArgs with a hint for the one mistake the optional-value
 // flags invite: --notifications send parses as a bare --notifications (true)
@@ -177,7 +187,7 @@ func keyPermissions(it map[string]any) string {
 	} else {
 		out = append(out, str(it, "scope"))
 		for _, k := range keyLevels[1:] {
-			if on, _ := it[k.flag].(bool); on {
+			if on, _ := it[k.flag].(bool); on && k.legacy {
 				out = append(out, k.flag)
 			}
 		}

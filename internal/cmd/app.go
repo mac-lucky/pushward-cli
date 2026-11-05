@@ -85,7 +85,11 @@ type App struct {
 	printer *output.Printer
 	cfg     config.Config
 	client  *api.Client
-	warned  map[string]bool
+	// org is the client with the org admin key, and orgID the organization
+	// it administers, both looked up once per invocation.
+	org    *api.Client
+	orgID  string
+	warned map[string]bool
 }
 
 func NewApp(version, commit, date string) *App {
@@ -152,6 +156,8 @@ var errWaitTimeout = errors.New("timed out waiting for an answer")
 
 var errNoToken = errors.New("no API key: set " + config.EnvToken + " or run `pushward auth login`")
 
+var errNoOrgToken = errors.New("no org admin key: set " + config.EnvOrgToken + " or run `pushward auth login --org`")
+
 func ExitCode(err error) int {
 	var ue *UsageError
 	var ae *api.Error
@@ -163,7 +169,7 @@ func ExitCode(err error) int {
 		return ExitUsage
 	case errors.Is(err, errWaitTimeout):
 		return ExitWaitTimeout
-	case errors.Is(err, errNoToken):
+	case errors.Is(err, errNoToken), errors.Is(err, errNoOrgToken):
 		return ExitAuth
 	case errors.As(err, &ae):
 		switch {
@@ -246,14 +252,19 @@ func (a *App) keyed() (*api.Client, error) {
 	return c, err
 }
 
-// call runs one operation and records its response for the Action.
+// call runs one operation and records its response for the Action. An
+// operation under /orgs goes out with the org admin key, for the organization
+// that key belongs to; every other one with the integration key.
 func (a *App) call(ctx context.Context, opID string, params map[string]string, query url.Values, body map[string]any) (*api.Response, error) {
-	c, err := a.api()
+	var c *api.Client
+	var err error
+	if strings.HasPrefix(api.Op(opID).Path, "/orgs") {
+		c, params, err = a.orgClient(ctx, params)
+	} else if c, err = a.api(); err == nil && c.Token == "" && !api.Op(opID).Public {
+		err = errNoToken
+	}
 	if err != nil {
 		return nil, err
-	}
-	if c.Token == "" && !api.Op(opID).Public {
-		return nil, errNoToken
 	}
 	var data []byte
 	if body != nil {
@@ -267,6 +278,49 @@ func (a *App) call(ctx context.Context, opID string, params map[string]string, q
 	}
 	a.Body = resp.Body
 	return resp, nil
+}
+
+// orgClient returns the client holding the org admin key and params with
+// org_id filled in. The organization is the key's own, read from GET /orgs
+// on the first org call of the invocation.
+func (a *App) orgClient(ctx context.Context, params map[string]string) (*api.Client, map[string]string, error) {
+	if a.org == nil {
+		if _, err := a.api(); err != nil {
+			return nil, nil, err
+		}
+		if a.cfg.OrgToken == "" {
+			return nil, nil, errNoOrgToken
+		}
+		a.org = a.newClient(a.cfg.APIURL, a.cfg.OrgToken)
+	}
+	if a.orgID == "" {
+		org, err := keyOrg(ctx, a.org)
+		if err != nil {
+			return nil, nil, err
+		}
+		a.orgID = str(org, "id")
+	}
+	p := map[string]string{"org_id": a.orgID}
+	maps.Copy(p, params)
+	return a.org, p, nil
+}
+
+// keyOrg returns the one organization an org admin key belongs to.
+func keyOrg(ctx context.Context, c *api.Client) (map[string]any, error) {
+	resp, err := c.Call(ctx, "listOrgs", nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	var page struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(resp.Body, &page); err != nil {
+		return nil, fmt.Errorf("decoding GET /orgs: %w", err)
+	}
+	if len(page.Items) != 1 || str(page.Items[0], "id") == "" {
+		return nil, fmt.Errorf("GET /orgs lists %d organizations for this key, want exactly one: is it an org admin key (hlo_...)?", len(page.Items))
+	}
+	return page.Items[0], nil
 }
 
 func (a *App) sleep(ctx context.Context, d time.Duration) error {
@@ -334,29 +388,51 @@ func positionals(c *cobra.Command) []string {
 	return names
 }
 
+// variadic returns a Use line's trailing list placeholder, which positionals
+// leaves out: <name>... takes one or more values, [<name>...] none or more.
+func variadic(c *cobra.Command) (name string, least int) {
+	f := strings.Fields(c.Use)
+	last := f[len(f)-1]
+	switch {
+	case strings.HasPrefix(last, "<") && strings.HasSuffix(last, ">..."):
+		return last[1 : len(last)-4], 1
+	case strings.HasPrefix(last, "[<") && strings.HasSuffix(last, ">...]"):
+		return last[2 : len(last)-5], 0
+	}
+	return "", 0
+}
+
 // checkArgs is every command's Args: the count comes from the Use line, and
 // slug and id values are validated before any request.
 func checkArgs(cmd *cobra.Command, got []string) error {
 	names := positionals(cmd)
-	if len(got) != len(names) {
+	rest, least := variadic(cmd)
+	switch {
+	case rest != "" && len(got) < len(names)+least:
+		return usagef("%s needs %s", cmd.CommandPath(), strings.Join(strings.Fields(cmd.Use)[1:], " "))
+	case rest == "" && len(got) != len(names):
 		if len(names) == 0 {
 			return usagef("%s takes no arguments", cmd.CommandPath())
 		}
 		return usagef("%s needs <%s>", cmd.CommandPath(), strings.Join(names, "> <"))
 	}
-	for i, name := range names {
+	for i, arg := range got {
+		name := rest
+		if i < len(names) {
+			name = names[i]
+		}
 		switch name {
 		case "slug":
-			if !slugPattern.MatchString(got[i]) {
-				return usagef("invalid slug %q: use 1-128 letters, digits, - or _, starting with a letter or digit", got[i])
+			if !slugPattern.MatchString(arg) {
+				return usagef("invalid slug %q: use 1-128 letters, digits, - or _, starting with a letter or digit", arg)
 			}
 		case "id":
-			if _, err := strconv.ParseUint(got[i], 10, 64); err != nil {
-				return usagef("invalid id %q: want a number", got[i])
+			if _, err := strconv.ParseUint(arg, 10, 64); err != nil {
+				return usagef("invalid id %q: want a number", arg)
 			}
 		case "key-id":
-			if !keyIDPattern.MatchString(got[i]) {
-				return usagef("invalid key id %q: want a UUID from pushward key list", got[i])
+			if !keyIDPattern.MatchString(arg) {
+				return usagef("invalid key id %q: want a UUID from pushward key list", arg)
 			}
 		}
 	}
