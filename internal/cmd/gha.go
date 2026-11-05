@@ -174,6 +174,13 @@ func (a *App) runGHA() error {
 			gha.Mask(a.Stdout, s)
 		}
 	}
+	// The invoice link carries a temporary token. Other responses have a url
+	// too (a notification's tap link), so only this command's is masked.
+	if t, _, err := root.Find(argv); err == nil && t.Annotations["operation"] == "getOrgInvoicePdf" {
+		if s := str(resp, "url"); s != "" {
+			gha.Mask(a.Stdout, s)
+		}
+	}
 	if out.Len() > 0 {
 		fmt.Fprintf(a.Stdout, "::group::PushWard response\n%s", out.String())
 		if !bytes.HasSuffix(out.Bytes(), []byte("\n")) {

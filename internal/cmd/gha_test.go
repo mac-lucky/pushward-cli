@@ -183,17 +183,20 @@ func TestGHAMasksNewKey(t *testing.T) {
 	}
 }
 
-// The codes org invite create and share grant return are shown once, so
-// they are masked before the response reaches the log.
+// The codes org invite create and share grant return are shown once, and an
+// invoice link carries a token, so they are masked before the response
+// reaches the log.
 func TestGHAMasksCodes(t *testing.T) {
 	f, srv := newFake(t)
 	t.Setenv("PUSHWARD_ORG_API_TOKEN", "hlo_test")
 	f.reply("GET /orgs", 200, testOrgs)
 	f.reply("POST /orgs/o1/invites", 201, `{"id":"i1","role":"admin","max_uses":5,"code":"JOIN-1234"}`)
+	f.reply("GET /orgs/o1/billing/invoices/txn_1/pdf", 200, `{"url":"https://example.com/invoice.pdf?token=t1"}`)
 	f.reply("POST /activities/deploy/permissions", 201, `{"id":"p1","role":"viewer","activity_slug":"deploy","grantee":{"type":"share_link","share_link":{"code":"SHR-9","share_url":"https://pushward.app/s/SHR-9"}}}`)
 	f.reply("POST /permissions/patterns", 201, `{"id":"p2","role":"viewer","slug_pattern":"ci-*","grantee":{"type":"pattern_link","pattern_link":{"code":"PAT-7","share_url":"https://pushward.app/s/PAT-7"}}}`)
 	for command, secrets := range map[string][]string{
 		"org invite create --role admin --max-uses 5": {"JOIN-1234"},
+		"org billing invoice txn_1":                   {"https://example.com/invoice.pdf?token=t1"},
 		"share grant deploy":                          {"SHR-9", "https://pushward.app/s/SHR-9"},
 		"share grant-pattern ci-*":                    {"PAT-7", "https://pushward.app/s/PAT-7"},
 	} {
