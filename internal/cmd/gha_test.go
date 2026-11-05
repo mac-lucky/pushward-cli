@@ -135,6 +135,7 @@ func TestGHAGuards(t *testing.T) {
 		"answers follow=1": {map[string]string{"token": "hlk", "command": "notification answers --after 57 --follow=true"}, "--follow is not available"},
 		"unknown":          {map[string]string{"token": "hlk", "command": "frobnicate"}, "unknown command"},
 		"group only":       {map[string]string{"token": "hlk", "command": "activity"}, "unknown command"},
+		"subgroup only":    {map[string]string{"token": "hlk", "command": "org member"}, "unknown command"},
 		"url in command":   {map[string]string{"token": "hlk", "command": "notify --api-url https://evil.example"}, "api-url input"},
 		"bad quoting":      {map[string]string{"token": "hlk", "command": `notify "unterminated`}, "command input"},
 		"widget no slug":   {map[string]string{"token": "hlk", "command": "widget update"}, "needs a slug"},
@@ -179,6 +180,49 @@ func TestGHAMasksNewKey(t *testing.T) {
 	mask, echo := strings.Index(r.stdout, "::add-mask::hlk_rolled\n"), strings.Index(r.stdout, "::group::")
 	if mask < 0 || echo < 0 || mask > echo {
 		t.Errorf("new key not masked before the response is logged:\n%s", r.stdout)
+	}
+}
+
+// The codes org invite create and share grant return are shown once, so
+// they are masked before the response reaches the log.
+func TestGHAMasksCodes(t *testing.T) {
+	f, srv := newFake(t)
+	t.Setenv("PUSHWARD_ORG_API_TOKEN", "hlo_test")
+	f.reply("GET /orgs", 200, testOrgs)
+	f.reply("POST /orgs/o1/invites", 201, `{"id":"i1","role":"admin","max_uses":5,"code":"JOIN-1234"}`)
+	f.reply("POST /activities/deploy/permissions", 201, `{"id":"p1","role":"viewer","activity_slug":"deploy","grantee":{"type":"share_link","share_link":{"code":"SHR-9","share_url":"https://pushward.app/s/SHR-9"}}}`)
+	f.reply("POST /permissions/patterns", 201, `{"id":"p2","role":"viewer","slug_pattern":"ci-*","grantee":{"type":"pattern_link","pattern_link":{"code":"PAT-7","share_url":"https://pushward.app/s/PAT-7"}}}`)
+	for command, secrets := range map[string][]string{
+		"org invite create --role admin --max-uses 5": {"JOIN-1234"},
+		"share grant deploy":                          {"SHR-9", "https://pushward.app/s/SHR-9"},
+		"share grant-pattern ci-*":                    {"PAT-7", "https://pushward.app/s/PAT-7"},
+	} {
+		env, _ := ghaEnv(t, map[string]string{"token": "hlk_action", "command": command})
+		r := runCLI(t, srv, env, "", "gha")
+		if r.code != 0 {
+			t.Fatalf("%s: exit %d\n%s\n%s", command, r.code, r.stdout, r.stderr)
+		}
+		echo := strings.Index(r.stdout, "::group::")
+		for _, s := range secrets {
+			if mask := strings.Index(r.stdout, "::add-mask::"+s+"\n"); mask < 0 || echo < 0 || mask > echo {
+				t.Errorf("%s: %s not masked before the response is logged:\n%s", command, s, r.stdout)
+			}
+		}
+	}
+}
+
+// me has subcommands but is a command itself, so the Action runs it.
+func TestGHAMe(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("GET /auth/me", 200, `{"id":"u1","live_activity_updates_used":3}`)
+	f.reply("GET /app/onboarding", 200, `{"use_case":"github"}`)
+	for command, path := range map[string]string{"me --jq .live_activity_updates_used": "/auth/me", "me onboarding": "/app/onboarding"} {
+		f.calls = nil
+		env, _ := ghaEnv(t, map[string]string{"token": "hlk_action", "command": command})
+		r := runCLI(t, srv, env, "", "gha")
+		if r.code != 0 || len(f.calls) != 1 || f.calls[0].Path != path {
+			t.Errorf("%s: exit %d, calls %+v\n%s", command, r.code, f.calls, r.stdout)
+		}
 	}
 }
 

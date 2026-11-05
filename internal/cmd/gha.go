@@ -163,6 +163,17 @@ func (a *App) runGHA() error {
 			gha.Mask(a.Stdout, raw)
 		}
 	}
+	// org invite create and share grant return a code that is shown once,
+	// and a share link carries it in its URL.
+	for _, p := range [][]string{
+		{"code"},
+		{"grantee", "share_link", "code"}, {"grantee", "share_link", "share_url"},
+		{"grantee", "pattern_link", "code"}, {"grantee", "pattern_link", "share_url"},
+	} {
+		if s := str(resp, p...); s != "" {
+			gha.Mask(a.Stdout, s)
+		}
+	}
 	if out.Len() > 0 {
 		fmt.Fprintf(a.Stdout, "::group::PushWard response\n%s", out.String())
 		if !bytes.HasSuffix(out.Bytes(), []byte("\n")) {
@@ -213,7 +224,9 @@ func (a *App) ghaArgs(in func(string) string) (argv []string, slug string, err e
 	// and the real run needs a clean one.
 	probe := NewRoot(&App{Getenv: a.Getenv})
 	target, _, err := probe.Find(words)
-	if err != nil || target == probe || target.HasSubCommands() {
+	// A group only holds subcommands; me and me onboarding have some but
+	// still call an operation themselves.
+	if err != nil || target == probe || (target.HasSubCommands() && target.Annotations["operation"] == "") {
 		return nil, "", usagef("command input: unknown command %q", command)
 	}
 	// Flags may come before the command (-q e2e generate), so check the
