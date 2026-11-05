@@ -202,6 +202,53 @@ An organization widget shows up on members' home screens, and on Apple Watch (wa
 
 Organization email goes only to the organization's own recipients, not to the members' personal ones. They are registered through the API with an organization key that has email permission and is not limited to some groups and tags, and each one confirms the address before the first message ([pushward.app/docs/teams](https://pushward.app/docs/teams)). The CLI has no command for that yet; `pushward api` can call it.
 
+## Administering an organization
+
+There are two kinds of key, and one person often has both. An integration key (`hlk_...`, yours or one of an organization's sending keys) is what every command sends, except `pushward org`. An org admin key (`hlo_...`) is made by an owner or admin in the PushWard console for one organization, and only `pushward org` sends it; the API refuses it everywhere else. Both live in the same config file:
+
+```sh
+pushward auth login --org        # prompts for the hlo_ key and checks it with GET /orgs
+export PUSHWARD_ORG_API_TOKEN=hlo_...   # or this, which wins over the stored one
+pushward auth status             # shows both keys and where each one comes from
+pushward auth logout --org       # removes only the org admin key
+```
+
+A key at level read sees what a viewer sees, which leaves out invites and keys; at manage it acts as an admin. The organization comes from the key, so no command takes an org id.
+
+```sh
+pushward org get
+pushward org member list
+pushward org member invite ops@example.com --role member   # mailed, pending until they join
+pushward org invite create --role viewer --max-uses 5 --expires-in 48h --jq .code
+pushward org key create ci --activities manage --notifications schedule --target-group-ids <group-id> --jq .key
+pushward org group create oncall --description "Primary on-call"
+pushward org group set-members <group-id> <user-id> <user-id>
+pushward org tag devices <tag-id> --add <user-id>:<device-id>
+pushward org route create 'deploy-*' --applies-to both --allow-group-ids <group-id>
+pushward org audit list --limit 50
+pushward org billing invoice <transaction-id> --output invoice.pdf
+```
+
+Lists that come in pages (members, invites, the audit log) are read to the end unless `--limit` stops them earlier. Deletes and revokes do not ask for confirmation. `org key create`, `org key roll` and `org invite create` print the secret once, like `key create`.
+
+## Devices, shares and account settings
+
+A personal integration key can also reach the account's own settings, at three more levels: `--devices`, `--sharing` and `--account`, each `none`, `read` or `manage`, on `key create` and `key update`. With an organization key that may send email, `email recipient` manages the organization's recipients instead of yours.
+
+```sh
+pushward key create settings --activities none --devices manage --sharing read --account manage
+pushward device list
+pushward device follow <device-id> deploy backup
+pushward device rename <device-id> "Desk iPad"
+pushward share grant deploy --role viewer --expires-in 24h --jq .grantee.share_link.share_url
+pushward share list --direction received
+pushward me update --nickname Maciej
+pushward me onboarding update --nudges false
+pushward email recipient add ops@example.com --label "Ops inbox"
+```
+
+Some settings stay where they are. The per-source level, sounds, critical alert volume, retention and trusted links are kept on each device, so set them in the app there. Signing in, deleting the account, registering a device, purchases, billing changes and creating or revoking org admin keys happen in the apps and the console only.
+
 ## End-to-end encryption
 
 With an encryption key, `notify`, `notification send` and `schedule create` encrypt the title, subtitle, body and url on your machine (AES-256-GCM, envelope format `pw1`). PushWard stores and forwards only the sealed text, and only devices holding the key can read it. Level, actions, metadata and the rest of what the server needs to deliver it stay readable. Devices need PushWard 1.17.0 or later; older builds show a placeholder.

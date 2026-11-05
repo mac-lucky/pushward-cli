@@ -241,6 +241,55 @@ All of an organization's widgets share one push window of at least 60 seconds, s
 and the recipient confirmed. The CLI has no command for adding one; if the user needs a new
 recipient, point them to https://pushward.app/docs/teams.
 
+## Administering an organization
+
+Only when the user asks to change their organization: members, invites, its sending keys,
+groups, tags, routing rules, device tags, the audit log or billing. `pushward org` sends the
+org admin key (`hlo_`), which an owner or admin makes in the PushWard console, and never the
+`hlk_` key the rest of this skill uses. Exit 3 with "no org admin key" means the user has to
+run `pushward auth login --org` in their own terminal or export `PUSHWARD_ORG_API_TOKEN`;
+never ask for the key in the chat. The organization comes from the key, so there is no org
+flag.
+
+```sh
+pushward org get
+pushward org member list --jq '.items[] | {user_id, role}'
+pushward org member invite ops@example.com --role member
+pushward org member update <user-id> --role viewer
+pushward org group set-members <group-id> <user-id> <user-id>
+pushward org route list
+pushward org audit list --limit 20
+```
+
+A read-level key sees what a viewer sees; invites, keys and every change need manage (403
+otherwise). Lists in pages (members, invites, audit) come back whole unless `--limit` cuts
+them. Removing, revoking and deleting happen at once with no prompt, so say what will go and
+wait for the user's yes first. `org key create`, `org key roll` and `org invite create` print a secret once: run them
+only when asked, and pass it straight to where the user wants it with `--jq .key` or
+`--jq .code`. `org member invite` mails the code instead and prints none.
+
+## Devices, shares and settings
+
+With a key at the devices, sharing or account level (`pushward key create` takes
+`--devices`, `--sharing` and `--account`, each none, read or manage), the CLI reaches the
+account's own setup. Without the level the server answers 403.
+
+```sh
+pushward device list
+pushward device follows <device-id>
+pushward device follow <device-id> agent-deploy-api
+pushward share list --direction received
+pushward share grant agent-deploy-api --role viewer --expires-in 24h --jq .grantee.share_link.share_url
+pushward me update --nickname Maciej
+pushward email recipient add ops@example.com --label "Ops inbox"
+```
+
+A new email recipient gets a confirmation link and can be mailed only once it is confirmed
+(`pushward email recipient list` shows the status). Some things are not in the CLI: the
+per-source level, sounds, critical alert volume, retention and trusted links live on each
+device, and sign-in, account deletion, registering a device, purchases, billing changes and
+org admin keys stay in the apps and the console. Send the user there for those.
+
 ## Encrypted notifications
 
 When the user has set up an encryption key (`pushward e2e key-id` exits 0), `notify`,
