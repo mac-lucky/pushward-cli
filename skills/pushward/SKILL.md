@@ -285,7 +285,10 @@ pushward email recipient add ops@example.com --label "Ops inbox"
 ```
 
 A new email recipient gets a confirmation link and can be mailed only once it is confirmed
-(`pushward email recipient list` shows the status). Some things are not in the CLI: the
+(`pushward email recipient list` shows the status). With an organization key that may send
+email, the same commands add and list the organization's recipients, so run
+`pushward email recipient add` for a new one instead of sending the user to the docs.
+Some things are not in the CLI: the
 per-source level, sounds, critical alert volume, retention and trusted links live on each
 device, and sign-in, account deletion, registering a device, purchases, billing changes and
 org admin keys stay in the apps and the console. Send the user there for those.
