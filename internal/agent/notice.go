@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mac-lucky/pushward-cli/internal/api"
 )
 
 // waitingText is the notice for a prompt left in the terminal.
@@ -223,7 +225,7 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	if body == "" {
 		body = fallback
 	}
-	id := r.noticeCollapse(in)
+	id, up := r.noticeCollapse(in)
 	n := map[string]any{
 		"title":       title,
 		"body":        body,
@@ -239,6 +241,15 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	r.markNotice(in, id)
 	_, err := r.Call(ctx, "createNotification", nil, nil, n)
 	r.logf("%s: notice: %s", in.noticeID(), describe(err))
+	var ae *api.Error
+	if !up && errors.As(err, &ae) && ae.Status >= 400 && ae.Status < 500 {
+		// Refused: nothing went out under the new id, and a take-back would
+		// spend one of the account's few retracts on it.
+		path := r.noticeMarker(in)
+		if b, _ := os.ReadFile(path); string(b) == id { // #nosec G304 -- this session's marker
+			_ = os.Remove(path)
+		}
+	}
 	return err == nil
 }
 
@@ -256,21 +267,22 @@ func (r *Runner) noticeMarker(in Input) string {
 	return filepath.Join(filepath.Dir(r.Dialogs), "agent-notices", in.noticeID())
 }
 
-// noticeCollapse is the collapse id for this session's next notice: the one
-// in its marker, so the notice replaces the one up, else a new one. An id
-// that was taken back is never sent again: its retract, a delayed silent
-// push, could take the new notice down. With no marker nothing is taken
-// back, and the session keeps its notice id.
-func (r *Runner) noticeCollapse(in Input) string {
+// noticeCollapse is the collapse id for this session's next notice, and
+// whether a notice may be up under it: the one in its marker, so the notice
+// replaces the one up, else a new one. An id that was taken back is never
+// sent again: its retract, a delayed silent push, could take the new notice
+// down. With no marker nothing is taken back, and the session keeps its
+// notice id.
+func (r *Runner) noticeCollapse(in Input) (string, bool) {
 	path := r.noticeMarker(in)
 	if path == "" {
-		return in.noticeID()
+		return in.noticeID(), false
 	}
 	b, _ := os.ReadFile(path) // #nosec G304 -- this session's marker
 	if id := string(b); strings.HasPrefix(id, in.noticeID()+"-") && len(id) <= 64 {
-		return id
+		return id, true
 	}
-	return in.noticeID() + "-" + rand.Text()
+	return in.noticeID() + "-" + rand.Text(), false
 }
 
 // markNotice leaves this session's marker holding id, rewritten so its time

@@ -15,6 +15,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/mac-lucky/pushward-cli/internal/api"
 )
 
 const (
@@ -1399,26 +1401,67 @@ func atTheDesk() Options {
 	return o
 }
 
-// A notice whose send failed may still have been delivered, so its id is
-// marked first and the next notice replaces it under the same id.
+// A notice whose send failed with no answer, or a server error, may still
+// have been delivered, so its id is marked first and the next notice
+// replaces it under the same id. One PushWard refused was not: it leaves no
+// marker, and nothing is taken back for it. A refused notice after one that
+// went out keeps that one's marker.
 func TestNoticeMarkedBeforeTheSend(t *testing.T) {
-	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
-	marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", "agent-"+hex8("sess-1"))
-	f := newFakeAPI()
-	synctest.Test(t, func(t *testing.T) {
-		f.notifStatus, f.notifCode = http.StatusForbidden, "integration_key.permission_denied"
-		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
-		b, err := os.ReadFile(marker)
-		if err != nil || !strings.HasPrefix(string(b), "agent-"+hex8("sess-1")+"-") {
-			t.Fatalf("failed send: marker %q, %v", b, err)
-		}
-		f.notifStatus, f.notifCode = 0, ""
-		hookWith(f, dialogs, away(), nil, stopInput)
-		n := f.notices()
-		if len(n) == 0 || n[len(n)-1]["collapse_id"] != string(b) {
-			t.Fatalf("next notice did not reuse %q: %v", b, n)
-		}
-	})
+	for name, c := range map[string]struct {
+		status int
+		code   string
+		delay  time.Duration
+		kept   bool
+	}{
+		"timed out":    {delay: time.Hour, kept: true},
+		"server error": {status: http.StatusInternalServerError, kept: true},
+		"refused":      {status: http.StatusForbidden, code: "integration_key.permission_denied"},
+		"over quota":   {status: http.StatusTooManyRequests, code: api.CodeQuotaExceeded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+			marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", "agent-"+hex8("sess-1"))
+			f := newFakeAPI()
+			fail := func(on bool) {
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				f.notifStatus, f.notifCode, f.noticeDelay = 0, "", 0
+				if on {
+					f.notifStatus, f.notifCode, f.noticeDelay = c.status, c.code, c.delay
+				}
+			}
+			synctest.Test(t, func(t *testing.T) {
+				fail(true)
+				// The plan's notice, which has a deadline of its own.
+				hookWith(f, dialogs, away(), nil, strings.Replace(claudePermission, `"tool_name":"Bash"`, `"tool_name":"ExitPlanMode"`, 1))
+				b, err := os.ReadFile(marker)
+				if c.kept != (err == nil) || c.kept && !strings.HasPrefix(string(b), "agent-"+hex8("sess-1")+"-") {
+					t.Fatalf("failed send: marker %q, %v", b, err)
+				}
+				fail(false)
+				if c.kept {
+					hookWith(f, dialogs, away(), nil, stopInput)
+					if n := f.notices(); n[len(n)-1]["collapse_id"] != string(b) {
+						t.Fatalf("next notice did not reuse %q: %v", b, n)
+					}
+					return
+				}
+				hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+				if r := f.retracted(); len(r) != 0 {
+					t.Fatalf("took back a refused notice: %v", r)
+				}
+
+				hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+				fail(true)
+				hookWith(f, dialogs, away(), nil, stopInput)
+				fail(false)
+				hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+				if r, n := f.retracted(), f.notices(); len(r) != 1 || r[0] != n[1]["collapse_id"] {
+					t.Fatalf("retracted %v, want the notice that went out: %v", r, n)
+				}
+			})
+		})
+	}
 }
 
 // A notice sent while away is taken back once, when a turn ends with the
