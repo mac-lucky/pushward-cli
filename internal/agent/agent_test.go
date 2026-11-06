@@ -1464,6 +1464,25 @@ func TestNoticeMarkedBeforeTheSend(t *testing.T) {
 	}
 }
 
+// A marker older than noticeFor is not taken back, the same as when another
+// session's notice swept it.
+func TestOldNoticeIsNotTakenBack(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", "agent-"+hex8("sess-1"))
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		at := time.Now().Add(-noticeFor)
+		if err := os.Chtimes(marker, at, at); err != nil {
+			t.Fatal(err)
+		}
+		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+	})
+	if _, err := os.Stat(marker); len(f.retracted()) != 0 || err == nil {
+		t.Errorf("retracted %v, marker kept %v", f.retracted(), err == nil)
+	}
+}
+
 // A notice sent while away is taken back once, when a turn ends with the
 // user at the desk; a turn that ends away replaces it instead. Only Stop
 // takes it back, and the next notice gets a new collapse id, so a late

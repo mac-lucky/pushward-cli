@@ -162,23 +162,28 @@ func (r *Runner) dialogs(in Input, take bool) (took bool) {
 		case age < 0 || age >= dialogFor:
 			_ = os.Remove(path)
 		case take && !took && strings.HasPrefix(e.Name(), mine) && standing(path, made, now):
-			_, took = takeFile(path)
+			_, _, took = takeFile(path)
 		}
 	}
 	return took
 }
 
 // takeFile removes the file at path and reports whether this caller was the
-// one that did, with what the file held. The file moves to a name of the
-// caller's own first: on APFS two removes of one file can both succeed.
-func takeFile(path string) ([]byte, bool) {
+// one that did, with what the file held and when it was last written. The
+// file moves to a name of the caller's own first: on APFS two removes of one
+// file can both succeed.
+func takeFile(path string) ([]byte, time.Time, bool) {
 	mine := path + ".taken-" + rand.Text()
 	if os.Rename(path, mine) != nil {
-		return nil, false
+		return nil, time.Time{}, false
+	}
+	var written time.Time
+	if info, err := os.Stat(mine); err == nil {
+		written = info.ModTime()
 	}
 	b, _ := os.ReadFile(mine) // #nosec G304 -- the caller's own name for a file in its directory
 	_ = os.Remove(mine)
-	return b, true
+	return b, written, true
 }
 
 // dialogTime reads the time out of a dialog file's name; the zero time, which
@@ -310,15 +315,16 @@ func (r *Runner) markNotice(in Input, id string) {
 }
 
 // takeBackNotice retracts this session's notice when its marker says one
-// went out. Only the hook that takes the marker retracts. The retract has
-// the cleanup budget, like the prompt's.
+// went out within noticeFor. Only the hook that takes the marker retracts.
+// The retract has the cleanup budget, like the prompt's.
 func (r *Runner) takeBackNotice(ctx context.Context, in Input) {
 	path := r.noticeMarker(in)
 	if path == "" {
 		return
 	}
-	id, took := takeFile(path)
-	if !took || len(id) == 0 {
+	// An older marker goes as the sweep would take it, with no retract.
+	id, written, took := takeFile(path)
+	if !took || len(id) == 0 || time.Since(written) >= noticeFor {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWithin)
