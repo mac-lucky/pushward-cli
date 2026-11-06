@@ -347,7 +347,9 @@ Claude Code 2.1.295 or later) and the plan review notice need CLI 1.9.0.
 
 With the hook installed in Claude Code, a question you ask with AskUserQuestion already reaches
 their phone when they are away, so it needs no `notify --action` of its own. From CLI 1.9.0 a
-plan you present for review sends a notice the same way.
+plan you present for review sends a notice the same way. The hook takes its own notices back
+off their devices once a turn ends with them at the desk, so they need no
+`notification retract` from you.
 
 ## Reading output
 

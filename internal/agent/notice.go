@@ -190,9 +190,19 @@ func (r *Runner) finished(ctx context.Context, agent Agent, in Input) {
 
 // notice sends a plain notification, only while the user is away from the
 // desk unless --notices always, and reports whether it went out. A session's
-// notices share a collapse id, so the newest replaces the one before.
+// notices share a collapse id, so the newest replaces the one before. A turn
+// that ends with the user at the desk takes the last one back instead.
 func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback string) bool {
-	if r.Opts.Notices == "off" || (r.Opts.Notices != "always" && r.atDesk(ctx)) || r.CheckKey(ctx) != nil {
+	if r.Opts.Notices == "off" {
+		return false
+	}
+	if r.Opts.Notices != "always" && r.atDesk(ctx) {
+		if in.Event == "Stop" {
+			r.takeBackNotice(ctx, in)
+		}
+		return false
+	}
+	if r.CheckKey(ctx) != nil {
 		return false
 	}
 	body := cut(oneLine(maskSecrets(text)), 200)
@@ -211,5 +221,61 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	}
 	_, err := r.Call(ctx, "createNotification", nil, nil, n)
 	r.logf("%s: notice: %s", in.noticeID(), describe(err))
-	return err == nil
+	if err != nil {
+		return false
+	}
+	r.markNotice(in)
+	return true
+}
+
+// noticeFor is how long a notice marker stands: a session that ends no turn
+// at the desk for that long keeps its last notice on the devices.
+const noticeFor = 24 * time.Hour
+
+// noticeMarker is the file that says a notice of this session may still be
+// up, named by its collapse id in a directory beside Dialogs; "" when there
+// is no Dialogs directory.
+func (r *Runner) noticeMarker(in Input) string {
+	if r.Dialogs == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(r.Dialogs), "agent-notices", in.noticeID())
+}
+
+// markNotice leaves this session's marker, rewritten so its time is the
+// last notice's, and removes the markers older than noticeFor, of any
+// session.
+func (r *Runner) markNotice(in Input) {
+	path := r.noticeMarker(in)
+	if path == "" {
+		return
+	}
+	dir := filepath.Dir(path)
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) >= noticeFor {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+	err := os.MkdirAll(dir, 0o700)
+	if err == nil {
+		err = os.WriteFile(path, nil, 0o600)
+	}
+	if err != nil {
+		r.logf("%s: notice marker: %s", in.noticeID(), describe(err))
+	}
+}
+
+// takeBackNotice retracts this session's notice when its marker says one
+// went out. Taking the marker is the remove that succeeds, so two hooks
+// never both retract. The retract has the cleanup budget, like the prompt's.
+func (r *Runner) takeBackNotice(ctx context.Context, in Input) {
+	path := r.noticeMarker(in)
+	if path == "" || os.Remove(path) != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWithin)
+	defer cancel()
+	_, err := r.Call(ctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": in.noticeID()})
+	r.logf("%s: retracted the notice: %s", in.noticeID(), describe(err))
 }

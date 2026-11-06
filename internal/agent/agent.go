@@ -114,6 +114,8 @@ type Runner struct {
 	// Dialogs, when set, is the directory where hooks leave a file for each
 	// dialog they take to the phone or send a notice for, so the
 	// permission_prompt Claude Code sends for that dialog is not pushed again.
+	// Beside it, agent-notices holds a file per session whose notice may
+	// still be up, taken back when a turn ends with the user at the desk.
 	Dialogs string
 	// Getenv reads the agent's environment, which the hook inherits; nil
 	// reads the process's own.

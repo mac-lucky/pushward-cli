@@ -381,6 +381,9 @@ func (a *ask) won(ev event, rd round) {
 		}
 	case fromNotification:
 		a.r.logf("%s: answered in the notification", a.slug)
+		// Not retracted: the same call asked again in this session has the
+		// same collapse id, and the retract, a delayed silent push, could
+		// take that prompt's notification down.
 		a.notifUp = false
 	}
 }

@@ -590,7 +590,9 @@ func TestMultiSelectGoesToTheTerminal(t *testing.T) {
 }
 
 // No device starts the card within 15s: the question comes as a notification
-// too, the notification's answer wins, and the card is ended.
+// too, the notification's answer wins, and the card is ended. The answered
+// notification is not retracted: the same call asked again gets its
+// collapse id.
 func TestFallbackNotificationWins(t *testing.T) {
 	f := newFakeAPI()
 	f.started = 0
@@ -1330,6 +1332,101 @@ func TestNotices(t *testing.T) {
 		if got := len(f.notices()); got != want {
 			t.Errorf("--notices %s at the desk: %d notices", notices, got)
 		}
+	}
+}
+
+const stopInput = `{"session_id":"sess-1","cwd":"/home/u/src/webapp","hook_event_name":"Stop","last_assistant_message":"done"}`
+
+// atTheDesk is the options of a user at the desk.
+func atTheDesk() Options {
+	o := DefaultOptions()
+	o.Desk = "desk"
+	return o
+}
+
+// A notice sent while away is taken back once, when a turn ends with the
+// user at the desk; a turn that ends away replaces it instead.
+func TestNoticeTakenBackAtTheDesk(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	id := "agent-" + hex8("sess-1")
+	marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", id)
+	marked := func() bool {
+		_, err := os.Stat(marker)
+		return err == nil
+	}
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+		if len(f.calls) != 0 || marked() {
+			t.Fatalf("no notice yet: %d requests, marker %v", len(f.calls), marked())
+		}
+
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		if len(f.notices()) != 1 || !marked() {
+			t.Fatalf("away: %d notices, marker %v", len(f.notices()), marked())
+		}
+		hookWith(f, dialogs, away(), nil, stopInput)
+		if len(f.notices()) != 2 || len(f.retracted()) != 0 || !marked() {
+			t.Fatalf("Stop away: %d notices, retracted %v, marker %v", len(f.notices()), f.retracted(), marked())
+		}
+
+		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+		if r := f.retracted(); len(r) != 1 || r[0] != id || marked() {
+			t.Fatalf("Stop at the desk: retracted %v, want [%s]; marker %v", r, id, marked())
+		}
+		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+		if r := f.retracted(); len(r) != 1 {
+			t.Fatalf("second Stop at the desk: retracted %v", r)
+		}
+
+		// --notices off takes nothing back; always replaces at the desk.
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		off := atTheDesk()
+		off.Notices = "off"
+		hookWith(f, dialogs, off, nil, stopInput)
+		always := atTheDesk()
+		always.Notices = "always"
+		hookWith(f, dialogs, always, nil, stopInput)
+		if len(f.notices()) != 4 || len(f.retracted()) != 1 || !marked() {
+			t.Fatalf("off, then always: %d notices, retracted %v, marker %v", len(f.notices()), f.retracted(), marked())
+		}
+
+		// A notice removes the markers older than a day, of any session.
+		stale := filepath.Join(filepath.Dir(marker), "agent-"+hex8("old"))
+		recent := filepath.Join(filepath.Dir(marker), "agent-"+hex8("recent"))
+		for path, age := range map[string]time.Duration{stale: noticeFor, recent: time.Hour} {
+			if err := os.WriteFile(path, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			at := time.Now().Add(-age)
+			if err := os.Chtimes(path, at, at); err != nil {
+				t.Fatal(err)
+			}
+		}
+		hookWith(f, dialogs, away(), nil, permissionPrompt("other"))
+		if _, err := os.Stat(stale); err == nil {
+			t.Error("a day-old marker was kept")
+		}
+		if _, err := os.Stat(recent); err != nil || !marked() {
+			t.Errorf("a fresh marker was removed: %v, marker %v", err, marked())
+		}
+	})
+}
+
+// Two turns that end at the desk at the same time take the notice back once.
+func TestNoticeTakenBackOnce(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Go(func() { hookWith(f, dialogs, atTheDesk(), nil, stopInput) })
+		}
+		wg.Wait()
+	})
+	if r := f.retracted(); len(r) != 1 {
+		t.Errorf("retracted %v, want one", r)
 	}
 }
 
