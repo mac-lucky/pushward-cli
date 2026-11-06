@@ -462,6 +462,26 @@ func (f *fakeAPI) retracted() []string {
 	return out
 }
 
+// resent lists the collapse ids of notifications sent after a retract of
+// the same id, which a late retract would take down.
+func (f *fakeAPI) resent() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	gone := map[string]bool{}
+	var out []string
+	for _, c := range f.calls {
+		id := fmt.Sprint(c.Body["collapse_id"])
+		switch {
+		case c.Method != "POST":
+		case c.Path == "/notifications/retract":
+			gone[id] = true
+		case c.Path == "/notifications" && gone[id]:
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 const testToken = "hlk_secret_test_key"
 
 // newRunner backs a Runner with the CLI's API client talking through rt.

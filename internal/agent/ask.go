@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -149,6 +150,11 @@ type ask struct {
 	in       Input
 	slug     string
 	deadline time.Time
+	// collapse is the collapse id of the ask's notifications: the slug and a
+	// random part, new after each retract. A retracted id is never sent
+	// again, by this ask or by the same call asked again in the session: the
+	// retract, a delayed silent push, could take the new notification down.
+	collapse string
 
 	// cardUp: the card is on the server and has not ended.
 	cardUp bool
@@ -171,11 +177,13 @@ type ask struct {
 }
 
 func (r *Runner) newAsk(agent Agent, in Input) *ask {
+	slug := in.slug()
 	return &ask{
 		r:        r,
 		agent:    agent,
 		in:       in,
-		slug:     in.slug(),
+		slug:     slug,
+		collapse: slug + "-" + rand.Text(),
 		deadline: time.Now().Add(r.Opts.MaxWait),
 		noCard:   r.Opts.Via == "notification",
 	}
@@ -361,8 +369,9 @@ func (a *ask) round(ctx context.Context, rd round) (reply, outcome) {
 	}
 }
 
-// won records which surface answered. The other one stays up until the
-// next round replaces it or withdraw takes it down.
+// won records which surface answered. The other one, and an answered
+// notification on the user's other devices, stays up until the next round
+// replaces it or withdraw takes it down.
 func (a *ask) won(ev event, rd round) {
 	switch ev.from {
 	case fromCard:
@@ -381,10 +390,6 @@ func (a *ask) won(ev event, rd round) {
 		}
 	case fromNotification:
 		a.r.logf("%s: answered in the notification", a.slug)
-		// Not retracted: the same call asked again in this session has the
-		// same collapse id, and the retract, a delayed silent push, could
-		// take that prompt's notification down.
-		a.notifUp = false
 	}
 }
 
@@ -411,9 +416,10 @@ func (a *ask) withdraw(ctx context.Context) {
 }
 
 func (a *ask) retract(ctx context.Context) {
-	_, err := a.r.Call(ctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": a.slug})
+	_, err := a.r.Call(ctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": a.collapse})
 	a.r.logf("%s: retracted the notification: %s", a.slug, describe(err))
 	a.notifUp = false
+	a.collapse = a.slug + "-" + rand.Text()
 }
 
 // show puts the round on the card: it starts the card, or moves an up card
@@ -607,7 +613,7 @@ func (a *ask) notify(ctx context.Context, rd round) (string, bool) {
 		"title":       rd.title,
 		"body":        rd.body,
 		"level":       "time-sensitive",
-		"collapse_id": a.slug,
+		"collapse_id": a.collapse,
 		"thread_id":   threadID,
 		"actions":     actions,
 	}

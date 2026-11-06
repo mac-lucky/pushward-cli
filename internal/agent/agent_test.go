@@ -47,6 +47,9 @@ func run(t *testing.T, f *fakeAPI, opts Options, idle Idler, agent Agent, stdin 
 		out = string(r.Hook(context.Background(), agent, strings.NewReader(stdin)))
 		logs = lb.String()
 	})
+	if ids := f.resent(); len(ids) > 0 {
+		t.Errorf("sent under a collapse id it retracted before: %v\nlog:\n%s", ids, logs)
+	}
 	return out, logs
 }
 
@@ -529,7 +532,9 @@ func TestServerWithoutSteps(t *testing.T) {
 	if len(asked) != 2 || asked[0]["title"] != "Claude Code asks (2/3)" || asked[1]["title"] != "Claude Code asks (3/3)" {
 		t.Errorf("notifications %+v", asked)
 	}
-	if f.ended() || len(f.retracted()) != 0 {
+	// The questions share one collapse id, the last one answered is taken
+	// off the other devices.
+	if r := f.retracted(); f.ended() || len(r) != 1 || r[0] != asked[1]["collapse_id"] || asked[0]["collapse_id"] != asked[1]["collapse_id"] {
 		t.Errorf("ended by the agent %v, retracted %v", f.ended(), f.retracted())
 	}
 }
@@ -554,8 +559,7 @@ func TestCardAnswerStopsTheFallback(t *testing.T) {
 	if asked := f.asked(); len(asked) != 1 || asked[0]["title"] != "Claude Code asks (1/3)" {
 		t.Errorf("notifications %+v, want only the first question's", asked)
 	}
-	slug := f.sent("POST", "/activities")[0].Body["slug"]
-	if r := f.retracted(); len(r) != 1 || r[0] != slug {
+	if r := f.retracted(); len(r) != 1 || r[0] != f.asked()[0]["collapse_id"] {
 		t.Errorf("retracted %v, want the first question's notification", r)
 	}
 }
@@ -591,8 +595,7 @@ func TestMultiSelectGoesToTheTerminal(t *testing.T) {
 
 // No device starts the card within 15s: the question comes as a notification
 // too, the notification's answer wins, and the card is ended. The answered
-// notification is not retracted: the same call asked again gets its
-// collapse id.
+// notification is retracted, so the other devices drop its buttons.
 func TestFallbackNotificationWins(t *testing.T) {
 	f := newFakeAPI()
 	f.started = 0
@@ -606,8 +609,13 @@ func TestFallbackNotificationWins(t *testing.T) {
 		t.Fatalf("%d notifications", len(asked))
 	}
 	n := asked[0]
-	slug := f.sent("POST", "/activities")[0].Body["slug"]
-	for k, v := range map[string]any{"title": "Claude Code asks", "body": "Run: " + bashCommand, "level": "time-sensitive", "collapse_id": slug, "thread_id": "pushward-agent", "subtitle": "webapp"} {
+	slug, _ := f.sent("POST", "/activities")[0].Body["slug"].(string)
+	// The prompt's collapse id is its card's slug and a random part of this
+	// ask's own, under the server's 64.
+	if id, _ := n["collapse_id"].(string); !regexp.MustCompile(`^` + slug + `-[A-Z2-7]{26}$`).MatchString(id) {
+		t.Errorf("collapse_id %q", id)
+	}
+	for k, v := range map[string]any{"title": "Claude Code asks", "body": "Run: " + bashCommand, "level": "time-sensitive", "thread_id": "pushward-agent", "subtitle": "webapp"} {
 		if n[k] != v {
 			t.Errorf("notification %s = %v, want %v", k, n[k], v)
 		}
@@ -618,8 +626,8 @@ func TestFallbackNotificationWins(t *testing.T) {
 	if !f.ended() {
 		t.Error("the card that lost was not ended")
 	}
-	if r := f.retracted(); len(r) != 0 {
-		t.Errorf("the answered notification was retracted: %v", r)
+	if r := f.retracted(); len(r) != 1 || r[0] != n["collapse_id"] {
+		t.Errorf("retracted %v, want the answered notification", r)
 	}
 	// The notification went out once the start window passed.
 	if at := f.notifs[0].at.Sub(f.act.created); at < 15*time.Second || at > 16*time.Second {
@@ -640,12 +648,59 @@ func TestFallbackCardWins(t *testing.T) {
 	if len(f.asked()) != 1 {
 		t.Fatalf("no fallback notification")
 	}
-	slug := f.sent("POST", "/activities")[0].Body["slug"]
-	if r := f.retracted(); len(r) != 1 || r[0] != slug {
-		t.Errorf("retracted %v, want [%v]", r, slug)
+	if r := f.retracted(); len(r) != 1 || r[0] != f.asked()[0]["collapse_id"] {
+		t.Errorf("retracted %v, want [%v]", r, f.asked()[0]["collapse_id"])
 	}
 	if f.ended() {
 		t.Error("the answered card is the server's to end")
+	}
+}
+
+// The same call asked again in the session, after its notification was
+// retracted, goes out under a collapse id of its own: the retract, a delayed
+// silent push, would take the new prompt down too.
+func TestPromptAskedAgainAfterARetract(t *testing.T) {
+	f := newFakeAPI()
+	f.started = 0
+	f.cardAnswer = answerCard("allow", 30*time.Second)
+	if out, _ := run(t, f, away(), nil, Claude, claudePermission); out != allowOut || len(f.retracted()) != 1 {
+		t.Fatalf("stdout %s, retracted %v", out, f.retracted())
+	}
+	f.cardAnswer = nil
+	f.notifAnswer = func(int, map[string]any) (string, string, time.Duration) { return "deny", "", time.Second }
+	o := away()
+	o.Via = "notification"
+	if out, logs := run(t, f, o, nil, Claude, claudePermission); out != denyOut {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	if asked := f.asked(); len(asked) != 2 || asked[1]["collapse_id"] == asked[0]["collapse_id"] {
+		t.Errorf("notifications %+v", asked)
+	}
+}
+
+// The card took the next question while the last one's notification was up,
+// so that was retracted; the card then ends unanswered, and the question goes
+// out as a notification under a new collapse id. The rest replace it.
+func TestCardEndsAfterARetract(t *testing.T) {
+	f := newFakeAPI()
+	f.started = 0
+	f.endCard = 30 * time.Second
+	f.cardAnswer = func(step int) (string, time.Duration) {
+		return map[int]string{1: "q1o1"}[step], 20 * time.Second
+	}
+	f.notifAnswer = func(n int, _ map[string]any) (string, string, time.Duration) {
+		return map[int]string{2: "q2o1", 3: "q3o2"}[n], "", time.Second
+	}
+	out, logs := run(t, f, away(), nil, Claude, askInput(questionsJSON))
+	if !strings.Contains(out, `"answers":{"Notify the team?":"Email","Ship it today?":"Yes, tag and push it to production now","Which database should we use?":"Postgres"}`) {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	asked := f.asked()
+	if len(asked) != 3 || asked[1]["collapse_id"] == asked[0]["collapse_id"] || asked[2]["collapse_id"] != asked[1]["collapse_id"] {
+		t.Fatalf("notifications %+v", asked)
+	}
+	if r := f.retracted(); len(r) != 2 || r[0] != asked[0]["collapse_id"] || r[1] != asked[2]["collapse_id"] {
+		t.Errorf("retracted %v", r)
 	}
 }
 
