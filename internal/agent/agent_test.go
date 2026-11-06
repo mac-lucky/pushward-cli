@@ -1345,16 +1345,27 @@ func atTheDesk() Options {
 }
 
 // A notice sent while away is taken back once, when a turn ends with the
-// user at the desk; a turn that ends away replaces it instead.
+// user at the desk; a turn that ends away replaces it instead. Only Stop
+// takes it back, and the next notice gets a new collapse id, so a late
+// retract cannot take it down.
 func TestNoticeTakenBackAtTheDesk(t *testing.T) {
 	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
-	id := "agent-" + hex8("sess-1")
-	marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", id)
+	marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", "agent-"+hex8("sess-1"))
 	marked := func() bool {
 		_, err := os.Stat(marker)
 		return err == nil
 	}
 	f := newFakeAPI()
+	// collapse is the collapse id of the i-th notice, checked to be one of
+	// this session's.
+	collapse := func(t *testing.T, i int) string {
+		t.Helper()
+		id, _ := f.notices()[i]["collapse_id"].(string)
+		if !strings.HasPrefix(id, "agent-"+hex8("sess-1")+"-") {
+			t.Fatalf("notice %d: collapse_id %q", i, id)
+		}
+		return id
+	}
 	synctest.Test(t, func(t *testing.T) {
 		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
 		if len(f.calls) != 0 || marked() {
@@ -1369,6 +1380,16 @@ func TestNoticeTakenBackAtTheDesk(t *testing.T) {
 		if len(f.notices()) != 2 || len(f.retracted()) != 0 || !marked() {
 			t.Fatalf("Stop away: %d notices, retracted %v, marker %v", len(f.notices()), f.retracted(), marked())
 		}
+		id := collapse(t, 0)
+		if next := collapse(t, 1); next != id {
+			t.Fatalf("Stop away sent under %q, not replacing %q", next, id)
+		}
+
+		// A prompt at the desk is no Stop: it takes nothing back.
+		hookWith(f, dialogs, atTheDesk(), nil, permissionPrompt("sess-1"))
+		if len(f.calls) != 2 || !marked() {
+			t.Fatalf("permission_prompt at the desk: %d requests, marker %v", len(f.calls), marked())
+		}
 
 		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
 		if r := f.retracted(); len(r) != 1 || r[0] != id || marked() {
@@ -1379,15 +1400,19 @@ func TestNoticeTakenBackAtTheDesk(t *testing.T) {
 			t.Fatalf("second Stop at the desk: retracted %v", r)
 		}
 
-		// --notices off takes nothing back; always replaces at the desk.
+		// --notices off takes nothing back; always replaces at the desk. The
+		// id taken back is not sent again.
 		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		if next := collapse(t, 2); next == id {
+			t.Fatalf("a notice after the take-back reused %q", id)
+		}
 		off := atTheDesk()
 		off.Notices = "off"
 		hookWith(f, dialogs, off, nil, stopInput)
 		always := atTheDesk()
 		always.Notices = "always"
 		hookWith(f, dialogs, always, nil, stopInput)
-		if len(f.notices()) != 4 || len(f.retracted()) != 1 || !marked() {
+		if len(f.notices()) != 4 || len(f.retracted()) != 1 || !marked() || collapse(t, 3) != collapse(t, 2) {
 			t.Fatalf("off, then always: %d notices, retracted %v, marker %v", len(f.notices()), f.retracted(), marked())
 		}
 

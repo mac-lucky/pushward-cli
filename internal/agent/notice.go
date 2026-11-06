@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"io/fs"
 	"os"
@@ -137,7 +138,7 @@ func (r *Runner) addDialog(in Input) (path string) {
 
 // dialogs removes the files older than dialogFor, of any session, and with
 // take one fresh file of this session's, reporting whether it took one.
-// Taking is the remove that succeeds, so two hooks never take the same file.
+// Two hooks never take the same file.
 func (r *Runner) dialogs(in Input, take bool) (took bool) {
 	if r.Dialogs == "" {
 		return false
@@ -159,10 +160,23 @@ func (r *Runner) dialogs(in Input, take bool) (took bool) {
 		case age < 0 || age >= dialogFor:
 			_ = os.Remove(path)
 		case take && !took && strings.HasPrefix(e.Name(), mine) && standing(path, made, now):
-			took = os.Remove(path) == nil
+			_, took = takeFile(path)
 		}
 	}
 	return took
+}
+
+// takeFile removes the file at path and reports whether this caller was the
+// one that did, with what the file held. The file moves to a name of the
+// caller's own first: on APFS two removes of one file can both succeed.
+func takeFile(path string) ([]byte, bool) {
+	mine := path + ".taken-" + rand.Text()
+	if os.Rename(path, mine) != nil {
+		return nil, false
+	}
+	b, _ := os.ReadFile(mine) // #nosec G304 -- the caller's own name for a file in its directory
+	_ = os.Remove(mine)
+	return b, true
 }
 
 // dialogTime reads the time out of a dialog file's name; the zero time, which
@@ -190,8 +204,8 @@ func (r *Runner) finished(ctx context.Context, agent Agent, in Input) {
 
 // notice sends a plain notification, only while the user is away from the
 // desk unless --notices always, and reports whether it went out. A session's
-// notices share a collapse id, so the newest replaces the one before. A turn
-// that ends with the user at the desk takes the last one back instead.
+// notices share a collapse id, so the newest replaces the one before, until
+// a turn that ends with the user at the desk takes the last one back.
 func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback string) bool {
 	if r.Opts.Notices == "off" {
 		return false
@@ -209,11 +223,12 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	if body == "" {
 		body = fallback
 	}
+	id := r.noticeCollapse(in)
 	n := map[string]any{
 		"title":       title,
 		"body":        body,
 		"level":       "active",
-		"collapse_id": in.noticeID(),
+		"collapse_id": id,
 		"thread_id":   threadID,
 	}
 	if repo := in.repo(); repo != "" {
@@ -224,7 +239,7 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	if err != nil {
 		return false
 	}
-	r.markNotice(in)
+	r.markNotice(in, id)
 	return true
 }
 
@@ -232,9 +247,9 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 // at the desk for that long keeps its last notice on the devices.
 const noticeFor = 24 * time.Hour
 
-// noticeMarker is the file that says a notice of this session may still be
-// up, named by its collapse id in a directory beside Dialogs; "" when there
-// is no Dialogs directory.
+// noticeMarker is the file that holds the collapse id of this session's
+// notice while it may still be up, named by the session's notice id in a
+// directory beside Dialogs; "" when there is no Dialogs directory.
 func (r *Runner) noticeMarker(in Input) string {
 	if r.Dialogs == "" {
 		return ""
@@ -242,10 +257,27 @@ func (r *Runner) noticeMarker(in Input) string {
 	return filepath.Join(filepath.Dir(r.Dialogs), "agent-notices", in.noticeID())
 }
 
-// markNotice leaves this session's marker, rewritten so its time is the
-// last notice's, and removes the markers older than noticeFor, of any
+// noticeCollapse is the collapse id for this session's next notice: the one
+// in its marker, so the notice replaces the one up, else a new one. An id
+// that was taken back is never sent again: its retract, a delayed silent
+// push, could take the new notice down. With no marker nothing is taken
+// back, and the session keeps its notice id.
+func (r *Runner) noticeCollapse(in Input) string {
+	path := r.noticeMarker(in)
+	if path == "" {
+		return in.noticeID()
+	}
+	b, _ := os.ReadFile(path) // #nosec G304 -- this session's marker
+	if id := string(b); strings.HasPrefix(id, in.noticeID()+"-") && len(id) <= 64 {
+		return id
+	}
+	return in.noticeID() + "-" + rand.Text()
+}
+
+// markNotice leaves this session's marker holding id, rewritten so its time
+// is the last notice's, and removes the markers older than noticeFor, of any
 // session.
-func (r *Runner) markNotice(in Input) {
+func (r *Runner) markNotice(in Input, id string) {
 	path := r.noticeMarker(in)
 	if path == "" {
 		return
@@ -259,7 +291,7 @@ func (r *Runner) markNotice(in Input) {
 	}
 	err := os.MkdirAll(dir, 0o700)
 	if err == nil {
-		err = os.WriteFile(path, nil, 0o600)
+		err = os.WriteFile(path, []byte(id), 0o600)
 	}
 	if err != nil {
 		r.logf("%s: notice marker: %s", in.noticeID(), describe(err))
@@ -267,15 +299,19 @@ func (r *Runner) markNotice(in Input) {
 }
 
 // takeBackNotice retracts this session's notice when its marker says one
-// went out. Taking the marker is the remove that succeeds, so two hooks
-// never both retract. The retract has the cleanup budget, like the prompt's.
+// went out. Only the hook that takes the marker retracts. The retract has
+// the cleanup budget, like the prompt's.
 func (r *Runner) takeBackNotice(ctx context.Context, in Input) {
 	path := r.noticeMarker(in)
-	if path == "" || os.Remove(path) != nil {
+	if path == "" {
+		return
+	}
+	id, took := takeFile(path)
+	if !took || len(id) == 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWithin)
 	defer cancel()
-	_, err := r.Call(ctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": in.noticeID()})
+	_, err := r.Call(ctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": string(id)})
 	r.logf("%s: retracted the notice: %s", in.noticeID(), describe(err))
 }
