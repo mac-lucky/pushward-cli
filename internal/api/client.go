@@ -130,7 +130,9 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 			base := min(time.Second<<(attempt-1), 30*time.Second)
 			delay = base/2 + rand.N(base/2) // #nosec G404 -- retry jitter, not security-sensitive
 		}
-		if time.Since(start)+delay > retryBudget {
+		// A retry that cannot start before ctx's deadline is not waited for,
+		// so the caller gets the server's answer rather than the deadline.
+		if dl, ok := ctx.Deadline(); time.Since(start)+delay > retryBudget || ok && time.Until(dl) < delay {
 			return nil, lastErr
 		}
 		if c.Debug != nil {

@@ -103,6 +103,20 @@ func TestRetryBudget(t *testing.T) {
 	}
 }
 
+func TestRetryPastTheDeadline(t *testing.T) {
+	c, n, _ := script(t, step{429, map[string]string{"Retry-After": "5"}, `{"code":"rate_limit.exceeded"}`})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := c.Do(ctx, Request{Method: "POST", Path: "/x", Body: []byte(`{}`)})
+	var ae *Error
+	if !errors.As(err, &ae) || ae.Status != 429 {
+		t.Fatalf("err = %v, want the 429", err)
+	}
+	if n.Load() != 1 {
+		t.Errorf("a delay past the deadline should stop at once, made %d requests", n.Load())
+	}
+}
+
 func TestRequestHeaders(t *testing.T) {
 	var got http.Header
 	var method string
