@@ -706,6 +706,79 @@ func TestCardEndsAfterARetract(t *testing.T) {
 	}
 }
 
+// Questions whose two labels cut to the same card button go out as a
+// notification; yesNo fits the card.
+const (
+	cutWhere = `{"question":"Where to?","header":"Where","options":[{"label":"Deploy to the production cluster now","description":""},{"label":"Deploy to the production cluster later","description":""}],"multiSelect":false}`
+	cutHow   = `{"question":"How?","header":"How","options":[{"label":"Roll out to every region at once","description":""},{"label":"Roll out to every region one by one","description":""}],"multiSelect":false}`
+	yesNo    = `{"question":"Ship it today?","header":"Release","options":[{"label":"Yes","description":""},{"label":"No","description":""}],"multiSelect":false}`
+)
+
+// The first question is answered in its notification and the second goes to
+// the card alone, so the first one's notification is retracted. PushWard
+// throttles that retract: it gets the cleanup budget, one try, so the card is
+// watched again at once. Nothing was taken back, so the last retract tries
+// the same id again.
+func TestThrottledRoundRetractDoesNotHoldTheCard(t *testing.T) {
+	f := newFakeAPI()
+	f.refuseRetracts = 10
+	f.notifAnswer = func(n int, _ map[string]any) (string, string, time.Duration) {
+		return map[int]string{1: "q1o1"}[n], "", time.Second
+	}
+	f.cardAnswer = func(step int) (string, time.Duration) {
+		return map[int]string{2: "q2o1"}[step], time.Second
+	}
+	out, logs := run(t, f, away(), nil, Claude, askInput("["+cutWhere+","+yesNo+"]"))
+	if !strings.Contains(out, `"answers":{"Ship it today?":"Yes","Where to?":"Deploy to the production cluster now"}`) {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	id := f.asked()[0]["collapse_id"]
+	if r := f.retracted(); len(r) != 2 || r[0] != id || r[1] != id {
+		t.Errorf("retracted %v, want one try from the round and one from the cleanup, both %v", r, id)
+	}
+}
+
+// The first question's notification could not be retracted when the card
+// took the second: it keeps its collapse id, so the third question's
+// notification replaces it, and the last retract takes that one down.
+func TestRefusedRetractKeepsTheID(t *testing.T) {
+	f := newFakeAPI()
+	f.refuseRetracts = 1
+	f.notifAnswer = func(n int, _ map[string]any) (string, string, time.Duration) {
+		return map[int]string{1: "q1o1", 2: "q3o2"}[n], "", time.Second
+	}
+	f.cardAnswer = func(step int) (string, time.Duration) {
+		return map[int]string{2: "q2o1"}[step], time.Second
+	}
+	out, logs := run(t, f, away(), nil, Claude, askInput("["+cutWhere+","+yesNo+","+cutHow+"]"))
+	if !strings.Contains(out, `"answers":{"How?":"Roll out to every region one by one","Ship it today?":"Yes","Where to?":"Deploy to the production cluster now"}`) {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	asked := f.asked()
+	if len(asked) != 2 || asked[1]["collapse_id"] != asked[0]["collapse_id"] {
+		t.Fatalf("notifications %+v", asked)
+	}
+	if r := f.retracted(); len(r) != 2 || r[0] != asked[0]["collapse_id"] || r[1] != r[0] {
+		t.Errorf("retracted %v", r)
+	}
+}
+
+// The prompt's notification got no answer in time, though PushWard may have
+// sent it: the prompt goes back to the terminal and the notification is
+// retracted all the same.
+func TestNotificationThatTimedOutIsRetracted(t *testing.T) {
+	f := newFakeAPI()
+	f.askDelay = time.Minute
+	o := away()
+	o.Via = "notification"
+	if out, logs := run(t, f, o, nil, Claude, claudePermission); out != "" {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	if r, n := f.retracted(), f.asked(); len(n) != 1 || len(r) != 1 || r[0] != n[0]["collapse_id"] {
+		t.Errorf("retracted %v, want the notification that timed out: %v", r, n)
+	}
+}
+
 // Devices confirm the card: no notification at all.
 func TestConfirmedCardSendsNoNotification(t *testing.T) {
 	f := newFakeAPI()

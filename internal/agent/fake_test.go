@@ -24,6 +24,8 @@ type call struct {
 	Path   string
 	Query  url.Values
 	Body   map[string]any
+	// Status is what the fake answered.
+	Status int
 }
 
 // fakeAPI is PushWard as far as the agent sees it. It parks ?wait= reads the
@@ -48,6 +50,11 @@ type fakeAPI struct {
 	// and noticeDelay each notification without actions.
 	createDelay time.Duration
 	noticeDelay time.Duration
+	// askDelay holds each notification with actions this long.
+	askDelay time.Duration
+	// refuseRetracts is how many retracts are answered 429 with a 6 s
+	// Retry-After.
+	refuseRetracts int
 	// existing is the stored activity a create finds, "" for none.
 	existing string
 	// started is the devices_started a read reports, -1 to leave it out.
@@ -126,9 +133,11 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Lock()
+	i := -1
 	if probe(c) {
 		f.probes++
 	} else {
+		i = len(f.calls)
 		f.calls = append(f.calls, c)
 	}
 	var delay time.Duration
@@ -138,6 +147,8 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		delay = f.createDelay
 	case c.Path == "/notifications" && c.Body["actions"] == nil:
 		delay = f.noticeDelay
+	case c.Path == "/notifications":
+		delay = f.askDelay
 	}
 	f.mu.Unlock()
 	if delay > 0 {
@@ -147,6 +158,11 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	status, body := f.route(r.Context(), c)
+	if i >= 0 {
+		f.mu.Lock()
+		f.calls[i].Status = status
+		f.mu.Unlock()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if body != nil {
@@ -266,6 +282,10 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 			return 200, map[string]any{"notification_id": id, "status": "answered", "action_id": n.action, "text": n.text}
 		})
 	case c.Method == "POST" && c.Path == "/notifications/retract":
+		if f.refuseRetracts > 0 {
+			f.refuseRetracts--
+			return 429, map[string]any{"status": 429, "code": "rate_limit.exceeded", "detail": "slow down", "retry_after_ms": 6000}
+		}
 		return 202, map[string]any{"devices": 1}
 	}
 	return problem(404, "not_found", "no route in fake")
@@ -463,7 +483,8 @@ func (f *fakeAPI) retracted() []string {
 }
 
 // resent lists the collapse ids of notifications sent after a retract of
-// the same id, which a late retract would take down.
+// the same id, which a late retract would take down. A retract PushWard
+// refused took nothing back.
 func (f *fakeAPI) resent() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -474,7 +495,7 @@ func (f *fakeAPI) resent() []string {
 		switch {
 		case c.Method != "POST":
 		case c.Path == "/notifications/retract":
-			gone[id] = true
+			gone[id] = gone[id] || c.Status < 400 || c.Status >= 500
 		case c.Path == "/notifications" && gone[id]:
 			out = append(out, id)
 		}

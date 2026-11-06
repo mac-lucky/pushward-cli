@@ -151,7 +151,8 @@ type ask struct {
 	slug     string
 	deadline time.Time
 	// collapse is the collapse id of the ask's notifications: the slug and a
-	// random part, new after each retract. A retracted id is never sent
+	// random part, new after each retract that may have landed. A retracted
+	// id is never sent
 	// again, by this ask or by the same call asked again in the session: the
 	// retract, a delayed silent push, could take the new notification down.
 	collapse string
@@ -371,7 +372,8 @@ func (a *ask) round(ctx context.Context, rd round) (reply, outcome) {
 
 // won records which surface answered. The other one, and an answered
 // notification on the user's other devices, stays up until the next round
-// replaces it or withdraw takes it down.
+// replaces it, a next round on the card alone retracts it, or withdraw takes
+// it down.
 func (a *ask) won(ev event, rd round) {
 	switch ev.from {
 	case fromCard:
@@ -415,9 +417,19 @@ func (a *ask) withdraw(ctx context.Context) {
 	a.cardUp, a.notifUp = false, false
 }
 
+// retract takes the ask's notification back, with the cleanup budget so a
+// throttled retract does not hold up the round. One PushWard refused took
+// nothing back: the id stays, so the next notification still replaces it
+// and withdraw tries again. Any other outcome may have landed, and the id is
+// never sent again.
 func (a *ask) retract(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWithin)
+	defer cancel()
 	_, err := a.r.Call(ctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": a.collapse})
 	a.r.logf("%s: retracted the notification: %s", a.slug, describe(err))
+	if refused(err) {
+		return
+	}
 	a.notifUp = false
 	a.collapse = a.slug + "-" + rand.Text()
 }
@@ -621,11 +633,13 @@ func (a *ask) notify(ctx context.Context, rd round) (string, bool) {
 		n["subtitle"] = repo
 	}
 	body, err := a.r.Call(ctx, "createNotification", nil, nil, n)
+	// Only a refusal is sure to have sent nothing: a send that timed out or
+	// failed past the server may be on the devices, and withdraw retracts it.
+	a.notifUp = a.notifUp || !refused(err)
 	if err != nil {
 		a.r.logf("%s: notification refused: %s", a.slug, describe(err))
 		return "", false
 	}
-	a.notifUp = true
 	var sent struct {
 		ID         json.Number `json:"id"`
 		Answerable bool        `json:"answerable"`
@@ -745,6 +759,13 @@ func (r *Runner) wait(ctx context.Context, op string, params map[string]string, 
 func isWaitLimit(err error) bool {
 	var ae *api.Error
 	return errors.As(err, &ae) && ae.Code == api.CodeAnswerWaitLimit
+}
+
+// refused reports whether PushWard answered err with a 4xx: the request did
+// nothing.
+func refused(err error) bool {
+	var ae *api.Error
+	return errors.As(err, &ae) && ae.Status >= 400 && ae.Status < 500
 }
 
 func isStatus(err error, status int) bool {

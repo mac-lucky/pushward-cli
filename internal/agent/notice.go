@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/mac-lucky/pushward-cli/internal/api"
 )
 
 // waitingText is the notice for a prompt left in the terminal.
@@ -246,8 +244,7 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	r.markNotice(in, id)
 	_, err := r.Call(ctx, "createNotification", nil, nil, n)
 	r.logf("%s: notice: %s", in.noticeID(), describe(err))
-	var ae *api.Error
-	if !up && errors.As(err, &ae) && ae.Status >= 400 && ae.Status < 500 {
+	if !up && refused(err) {
 		// Refused: nothing went out under the new id, and a take-back would
 		// spend one of the account's few retracts on it.
 		path := r.noticeMarker(in)
