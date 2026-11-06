@@ -1344,6 +1344,28 @@ func atTheDesk() Options {
 	return o
 }
 
+// A notice whose send failed may still have been delivered, so its id is
+// marked first and the next notice replaces it under the same id.
+func TestNoticeMarkedBeforeTheSend(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", "agent-"+hex8("sess-1"))
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		f.notifStatus, f.notifCode = http.StatusForbidden, "integration_key.permission_denied"
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		b, err := os.ReadFile(marker)
+		if err != nil || !strings.HasPrefix(string(b), "agent-"+hex8("sess-1")+"-") {
+			t.Fatalf("failed send: marker %q, %v", b, err)
+		}
+		f.notifStatus, f.notifCode = 0, ""
+		hookWith(f, dialogs, away(), nil, stopInput)
+		n := f.notices()
+		if len(n) == 0 || n[len(n)-1]["collapse_id"] != string(b) {
+			t.Fatalf("next notice did not reuse %q: %v", b, n)
+		}
+	})
+}
+
 // A notice sent while away is taken back once, when a turn ends with the
 // user at the desk; a turn that ends away replaces it instead. Only Stop
 // takes it back, and the next notice gets a new collapse id, so a late

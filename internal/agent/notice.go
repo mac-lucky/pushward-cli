@@ -234,13 +234,12 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	if repo := in.repo(); repo != "" {
 		n["subtitle"] = repo
 	}
+	// Marked before the send: one that timed out may still have been
+	// delivered, and the next notice must replace it under the same id.
+	r.markNotice(in, id)
 	_, err := r.Call(ctx, "createNotification", nil, nil, n)
 	r.logf("%s: notice: %s", in.noticeID(), describe(err))
-	if err != nil {
-		return false
-	}
-	r.markNotice(in, id)
-	return true
+	return err == nil
 }
 
 // noticeFor is how long a notice marker stands: a session that ends no turn
