@@ -244,9 +244,9 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	r.markNotice(in, id)
 	_, err := r.Call(ctx, "createNotification", nil, nil, n)
 	r.logf("%s: notice: %s", in.noticeID(), describe(err))
-	if !up && refused(err) {
-		// Refused: nothing went out under the new id, and a take-back would
-		// spend one of the account's few retracts on it.
+	if !up && !mayHaveSent(err) {
+		// Refused, or never sent: nothing went out under the new id, and a
+		// take-back would spend one of the account's few retracts on it.
 		path := r.noticeMarker(in)
 		if b, _ := os.ReadFile(path); string(b) == id { // #nosec G304 -- this session's marker
 			_ = os.Remove(path)

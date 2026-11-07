@@ -152,9 +152,9 @@ type ask struct {
 	deadline time.Time
 	// collapse is the collapse id of the ask's notifications: the slug and a
 	// random part, new after each retract that may have landed. A retracted
-	// id is never sent
-	// again, by this ask or by the same call asked again in the session: the
-	// retract, a delayed silent push, could take the new notification down.
+	// id is never sent again, by this ask or by the same call asked again in
+	// the session: the retract, a delayed silent push, could take the new
+	// notification down.
 	collapse string
 
 	// cardUp: the card is on the server and has not ended.
@@ -418,8 +418,8 @@ func (a *ask) withdraw(ctx context.Context) {
 }
 
 // retract takes the ask's notification back, with the cleanup budget so a
-// throttled retract does not hold up the round. One PushWard refused took
-// nothing back: the id stays, so the next notification still replaces it
+// throttled retract does not hold up the round. A retract PushWard refused
+// took nothing back: the id stays, so the next notification still replaces it
 // and withdraw tries again. Any other outcome may have landed, and the id is
 // never sent again.
 func (a *ask) retract(ctx context.Context) {
@@ -633,9 +633,9 @@ func (a *ask) notify(ctx context.Context, rd round) (string, bool) {
 		n["subtitle"] = repo
 	}
 	body, err := a.r.Call(ctx, "createNotification", nil, nil, n)
-	// Only a refusal is sure to have sent nothing: a send that timed out or
-	// failed past the server may be on the devices, and withdraw retracts it.
-	a.notifUp = a.notifUp || !refused(err)
+	// A send that timed out or failed past the server may be on the
+	// devices, and withdraw retracts it.
+	a.notifUp = a.notifUp || mayHaveSent(err)
 	if err != nil {
 		a.r.logf("%s: notification refused: %s", a.slug, describe(err))
 		return "", false
@@ -766,6 +766,22 @@ func isWaitLimit(err error) bool {
 func refused(err error) bool {
 	var ae *api.Error
 	return errors.As(err, &ae) && ae.Status >= 400 && ae.Status < 500
+}
+
+// mayHaveSent reports whether a send that returned err may be on the
+// devices: it went through, or it failed past the server (a 5xx, a lost
+// connection, a timeout). A refusal sent nothing, and neither did a failure
+// before any request, such as a key that cannot seal the body.
+func mayHaveSent(err error) bool {
+	var ae *api.Error
+	var te *api.TransportError
+	switch {
+	case err == nil:
+		return true
+	case errors.As(err, &ae):
+		return ae.Status >= 500
+	}
+	return errors.As(err, &te) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
 
 func isStatus(err error, status int) bool {

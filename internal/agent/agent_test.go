@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -777,6 +778,49 @@ func TestNotificationThatTimedOutIsRetracted(t *testing.T) {
 	if r, n := f.retracted(), f.asked(); len(n) != 1 || len(r) != 1 || r[0] != n[0]["collapse_id"] {
 		t.Errorf("retracted %v, want the notification that timed out: %v", r, n)
 	}
+}
+
+// A notification that never left the machine (a key that cannot seal it)
+// is not on any device: nothing is retracted for it, and a notice that
+// could not be sealed leaves no marker to take back.
+func TestNotificationThatNeverLeftIsNotRetracted(t *testing.T) {
+	sealFails := func(r *Runner) {
+		inner := r.Call
+		r.Call = func(ctx context.Context, op string, p map[string]string, q url.Values, b map[string]any) ([]byte, error) {
+			if op == "createNotification" {
+				return nil, errors.New("encrypting: bad key")
+			}
+			return inner(ctx, op, p, q, b)
+		}
+	}
+	t.Run("prompt", func(t *testing.T) {
+		f := newFakeAPI()
+		o := away()
+		o.Via = "notification"
+		synctest.Test(t, func(t *testing.T) {
+			r, _ := newRunner(f, o)
+			sealFails(r)
+			_ = r.Hook(context.Background(), Claude, strings.NewReader(claudePermission))
+		})
+		if r := f.retracted(); len(r) != 0 {
+			t.Errorf("retracted %v, a notification that was never sent", r)
+		}
+	})
+	t.Run("notice", func(t *testing.T) {
+		dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+		marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", "agent-"+hex8("sess-1"))
+		f := newFakeAPI()
+		synctest.Test(t, func(t *testing.T) {
+			r, _ := newRunner(f, away())
+			r.Dialogs = dialogs
+			sealFails(r)
+			_ = r.Hook(context.Background(), Claude, strings.NewReader(permissionPrompt("sess-1")))
+			hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+		})
+		if _, err := os.Stat(marker); len(f.retracted()) != 0 || err == nil {
+			t.Errorf("retracted %v, marker kept %v", f.retracted(), err == nil)
+		}
+	})
 }
 
 // Devices confirm the card: no notification at all.
