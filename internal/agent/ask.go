@@ -632,6 +632,11 @@ func (a *ask) notify(ctx context.Context, rd round) (string, bool) {
 	if repo := a.in.repo(); repo != "" {
 		n["subtitle"] = repo
 	}
+	if err := ctx.Err(); err != nil {
+		// Nothing would leave, and withdraw would retract what never went out.
+		a.r.logf("%s: notification not sent: %s", a.slug, describe(err))
+		return "", false
+	}
 	body, err := a.r.Call(ctx, "createNotification", nil, nil, n)
 	// A send that timed out or failed past the server may be on the
 	// devices, and withdraw retracts it.

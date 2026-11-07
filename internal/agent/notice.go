@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -239,6 +240,11 @@ func (r *Runner) notice(ctx context.Context, in Input, title, text, fallback str
 	if repo := in.repo(); repo != "" {
 		n["subtitle"] = repo
 	}
+	if err := ctx.Err(); err != nil {
+		// Nothing would leave, and the marker would cost a take-back.
+		r.logf("%s: notice: %s", in.noticeID(), describe(err))
+		return false
+	}
 	// Marked before the send: one that timed out may still have been
 	// delivered, and the next notice must replace it under the same id.
 	r.markNotice(in, id)
@@ -313,10 +319,11 @@ func (r *Runner) markNotice(in Input, id string) {
 
 // takeBackNotice retracts this session's notice when its marker says one
 // went out within noticeFor. Only the hook that takes the marker retracts.
-// The retract has the cleanup budget, like the prompt's. One PushWard
-// refused took nothing back, so the marker goes back with its time: the next
-// Stop at the desk tries again and the next notice replaces the one up,
-// unless a newer notice marked the session meanwhile.
+// The retract has the cleanup budget, like the prompt's. A take-back
+// PushWard turned away for its rate limit took nothing back, so the marker
+// goes back with its time: the next Stop at the desk tries again and the next
+// notice replaces the one up, unless a newer notice marked the session
+// meanwhile. Any other refusal would come again, and is not retried.
 func (r *Runner) takeBackNotice(ctx context.Context, in Input) {
 	path := r.noticeMarker(in)
 	if path == "" {
@@ -331,7 +338,7 @@ func (r *Runner) takeBackNotice(ctx context.Context, in Input) {
 	defer cancel()
 	_, err := r.Call(ctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": string(id)})
 	r.logf("%s: retracted the notice: %s", in.noticeID(), describe(err))
-	if refused(err) {
+	if isStatus(err, http.StatusTooManyRequests) {
 		putBack(path, id, written)
 	}
 }

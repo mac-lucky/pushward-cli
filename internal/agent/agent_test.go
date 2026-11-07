@@ -1825,3 +1825,166 @@ func mustJSON(t *testing.T, v any) string {
 	}
 	return string(b)
 }
+
+// The hook is cancelled (Esc ended the turn) while the card is being
+// created: the notification and the notice that would follow never leave,
+// so neither the round nor the next Stop at the desk spends a retract.
+func TestCancelledHookSendsAndRetractsNothing(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	f.createDelay = 3 * time.Second
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		time.AfterFunc(time.Second, cancel)
+		r, _ := newRunner(liveTransport{f}, away())
+		r.Dialogs = dialogs
+		_ = r.Hook(ctx, Claude, strings.NewReader(claudePermission))
+		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+	})
+	if a, n, r := f.asked(), f.notices(), f.retracted(); len(a)+len(n) != 0 || len(r) != 0 {
+		t.Errorf("%d notifications and %d notices sent, retracted %v; want none of them", len(a), len(n), r)
+	}
+}
+
+// Only the rate limit puts a refused take-back's marker back. A refusal
+// that would come again, such as a key that lost notifications access, is
+// tried once.
+func TestTakeBackRefusedForGoodIsNotRetried(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	tries := 0
+	hook := func(opts Options, stdin string) {
+		r, _ := newRunner(f, opts)
+		r.Dialogs = dialogs
+		inner := r.Call
+		r.Call = func(ctx context.Context, op string, p map[string]string, q url.Values, b map[string]any) ([]byte, error) {
+			if op == "retractNotifications" {
+				tries++
+				return nil, &api.Error{Method: "POST", Path: "/notifications/retract", Status: 403, Code: "permission.denied"}
+			}
+			return inner(ctx, op, p, q, b)
+		}
+		_ = r.Hook(context.Background(), Claude, strings.NewReader(stdin))
+	}
+	synctest.Test(t, func(t *testing.T) {
+		hook(away(), permissionPrompt("sess-1"))
+		for range 5 {
+			hook(atTheDesk(), stopInput)
+			time.Sleep(time.Minute)
+		}
+	})
+	if tries != 1 {
+		t.Errorf("a take-back refused with 403 was tried %d times over 5 Stops, want 1", tries)
+	}
+}
+
+// A take-back that may have landed (a 5xx) keeps no marker, so the next
+// notice goes out under a new id instead of the one just retracted.
+func TestTakeBackThatMayHaveLandedRenewsTheID(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		r, _ := newRunner(f, atTheDesk())
+		r.Dialogs = dialogs
+		inner := r.Call
+		r.Call = func(ctx context.Context, op string, p map[string]string, q url.Values, b map[string]any) ([]byte, error) {
+			if op == "retractNotifications" {
+				_, _ = inner(ctx, op, p, q, b)
+				return nil, &api.Error{Method: "POST", Path: "/notifications/retract", Status: 502}
+			}
+			return inner(ctx, op, p, q, b)
+		}
+		_ = r.Hook(context.Background(), Claude, strings.NewReader(stopInput))
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+	})
+	if n := f.notices(); len(n) != 2 {
+		t.Fatalf("%d notices, want 2", len(n))
+	}
+	if s := f.resent(); len(s) != 0 {
+		t.Errorf("sent under a retracted id: %v", s)
+	}
+}
+
+// A notice of the session that marks it while a take-back is out and turned
+// away keeps its marker: the put-back never overwrites a newer one.
+func TestPutBackKeepsANewerMarker(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", "agent-"+hex8("sess-1"))
+	newer := "agent-" + hex8("sess-1") + "-NEWERNEWERNEWERNEWERNEWER1"
+	f := newFakeAPI()
+	synctest.Test(t, func(t *testing.T) {
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		r, _ := newRunner(f, atTheDesk())
+		r.Dialogs = dialogs
+		inner := r.Call
+		r.Call = func(ctx context.Context, op string, p map[string]string, q url.Values, b map[string]any) ([]byte, error) {
+			if op == "retractNotifications" {
+				if err := os.WriteFile(marker, []byte(newer), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return nil, &api.Error{Method: "POST", Path: "/notifications/retract", Status: http.StatusTooManyRequests}
+			}
+			return inner(ctx, op, p, q, b)
+		}
+		_ = r.Hook(context.Background(), Claude, strings.NewReader(stopInput))
+	})
+	if b, _ := os.ReadFile(marker); string(b) != newer {
+		t.Errorf("marker %q, want the newer notice's %q", b, newer)
+	}
+}
+
+// A put-back marker keeps the last notice's time, so a take-back turned away
+// does not stretch the day it is tried for.
+func TestPutBackKeepsTheDay(t *testing.T) {
+	dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+	marker := filepath.Join(filepath.Dir(dialogs), "agent-notices", "agent-"+hex8("sess-1"))
+	f := newFakeAPI()
+	f.refuseRetracts = 1
+	synctest.Test(t, func(t *testing.T) {
+		hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+		at := time.Now().Add(-(noticeFor - time.Hour))
+		if err := os.Chtimes(marker, at, at); err != nil {
+			t.Fatal(err)
+		}
+		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+		time.Sleep(2 * time.Hour)
+		hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+	})
+	if r := f.retracted(); len(r) != 1 {
+		t.Errorf("retracted %v, want only the try turned away within the day", r)
+	}
+}
+
+// A send whose answer is lost at the network after the write may be on the
+// devices: the prompt's notification is retracted, and the notice keeps its
+// marker for the take-back at the desk.
+func TestSendCutAfterTheWriteIsTakenBack(t *testing.T) {
+	t.Run("prompt", func(t *testing.T) {
+		f := newFakeAPI()
+		o := away()
+		o.Via = "notification"
+		synctest.Test(t, func(t *testing.T) {
+			r, _ := newRunner(cutTransport{f}, o)
+			_ = r.Hook(context.Background(), Claude, strings.NewReader(claudePermission))
+		})
+		a, r := f.asked(), f.retracted()
+		if len(a) != 1 || len(r) != 1 || r[0] != a[0]["collapse_id"] {
+			t.Errorf("asked %d, retracted %v; want the notification taken back", len(a), r)
+		}
+	})
+	t.Run("notice", func(t *testing.T) {
+		dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+		f := newFakeAPI()
+		synctest.Test(t, func(t *testing.T) {
+			r, _ := newRunner(cutTransport{f}, away())
+			r.Dialogs = dialogs
+			_ = r.Hook(context.Background(), Claude, strings.NewReader(permissionPrompt("sess-1")))
+			hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+		})
+		n, r := f.notices(), f.retracted()
+		if len(n) != 1 || len(r) != 1 || r[0] != n[0]["collapse_id"] {
+			t.Errorf("notices %d, retracted %v; want the notice taken back", len(n), r)
+		}
+	})
+}

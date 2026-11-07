@@ -539,3 +539,27 @@ var errDown = errors.New("connection refused")
 type downTransport struct{}
 
 func (downTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, errDown }
+
+// liveTransport fails a request whose context already ended before any I/O,
+// as net/http's Transport does, so nothing reaches f.
+type liveTransport struct{ f *fakeAPI }
+
+func (t liveTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if err := r.Context().Err(); err != nil {
+		return nil, err
+	}
+	return t.f.RoundTrip(r)
+}
+
+// cutTransport serves every request on f and loses the answer to each
+// notification sent, as a connection that drops after the write.
+type cutTransport struct{ f *fakeAPI }
+
+func (t cutTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	res, err := t.f.RoundTrip(r)
+	if err == nil && r.Method == http.MethodPost && r.URL.Path == "/notifications" {
+		_ = res.Body.Close()
+		return nil, io.ErrUnexpectedEOF
+	}
+	return res, err
+}
