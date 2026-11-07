@@ -313,7 +313,10 @@ func (r *Runner) markNotice(in Input, id string) {
 
 // takeBackNotice retracts this session's notice when its marker says one
 // went out within noticeFor. Only the hook that takes the marker retracts.
-// The retract has the cleanup budget, like the prompt's.
+// The retract has the cleanup budget, like the prompt's. One PushWard
+// refused took nothing back, so the marker goes back with its time: the next
+// Stop at the desk tries again and the next notice replaces the one up,
+// unless a newer notice marked the session meanwhile.
 func (r *Runner) takeBackNotice(ctx context.Context, in Input) {
 	path := r.noticeMarker(in)
 	if path == "" {
@@ -328,4 +331,25 @@ func (r *Runner) takeBackNotice(ctx context.Context, in Input) {
 	defer cancel()
 	_, err := r.Call(ctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": string(id)})
 	r.logf("%s: retracted the notice: %s", in.noticeID(), describe(err))
+	if refused(err) {
+		putBack(path, id, written)
+	}
+}
+
+// putBack writes a taken marker back unless one is there again.
+func putBack(path string, id []byte, written time.Time) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- this session's marker
+	if err != nil {
+		return
+	}
+	_, err = f.Write(id)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chtimes(path, written, written)
+	}
+	if err != nil {
+		_ = os.Remove(path)
+	}
 }

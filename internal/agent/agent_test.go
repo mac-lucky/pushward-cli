@@ -1600,6 +1600,36 @@ func TestOldNoticeIsNotTakenBack(t *testing.T) {
 	}
 }
 
+// A take-back PushWard refuses (its rate limit) took nothing back: the next
+// Stop at the desk tries the same id again, and the next notice replaces the
+// one still up.
+func TestRefusedNoticeTakeBackKeepsTheNotice(t *testing.T) {
+	for _, next := range []string{"stop", "notice"} {
+		t.Run(next, func(t *testing.T) {
+			dialogs := filepath.Join(t.TempDir(), "agent-dialogs")
+			f := newFakeAPI()
+			f.refuseRetracts = 1
+			synctest.Test(t, func(t *testing.T) {
+				hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+				hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+				if next == "stop" {
+					hookWith(f, dialogs, atTheDesk(), nil, stopInput)
+				} else {
+					hookWith(f, dialogs, away(), nil, permissionPrompt("sess-1"))
+				}
+			})
+			n, r := f.notices(), f.retracted()
+			id := n[0]["collapse_id"]
+			switch {
+			case next == "stop" && (len(r) != 2 || r[0] != id || r[1] != id):
+				t.Errorf("retracted %v, want %v twice", r, id)
+			case next == "notice" && (len(n) != 2 || n[1]["collapse_id"] != id):
+				t.Errorf("notices %v, want the second under %v", n, id)
+			}
+		})
+	}
+}
+
 // A notice sent while away is taken back once, when a turn ends with the
 // user at the desk; a turn that ends away replaces it instead. Only Stop
 // takes it back, and the next notice gets a new collapse id, so a late
