@@ -47,6 +47,8 @@ pushward auth login --org.
 		newOrgDeviceCmd(a),
 		newOrgAuditCmd(a),
 		newOrgBillingCmd(a),
+		newOrgDomainCmd(a),
+		newOrgSSOCmd(a),
 	)
 	return group(c)
 }
@@ -672,7 +674,8 @@ func newOrgAuditCmd(a *App) *cobra.Command {
 		[]string{"TIME", "ACTOR", "ACTION", "TARGET"}, func(it map[string]any) []string {
 			return []string{shortTime(str(it, "created_at")), kindID(str(it, "actor_kind"), cmp.Or(str(it, "actor_nickname"), str(it, "actor_user_id"))),
 				str(it, "action"), kindID(str(it, "target_kind"), str(it, "target_id"))}
-		}))
+		}),
+		newOrgAuditExportCmd(a))
 	return group(c)
 }
 

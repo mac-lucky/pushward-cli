@@ -229,7 +229,22 @@ pushward org audit list --limit 50
 pushward org billing invoice <transaction-id> --output invoice.pdf
 ```
 
-Lists that come in pages (members, invites, the audit log) are read to the end unless `--limit` stops them earlier. Deletes and revokes do not ask for confirmation. `org key create`, `org key roll` and `org invite create` print the secret once, like `key create`.
+Lists that come in pages (members, invites, the audit log) are read to the end unless `--limit` stops them earlier. Deletes and revokes do not ask for confirmation, except `org sso delete` below. `org key create`, `org key roll` and `org invite create` print the secret once, like `key create`.
+
+An organization on the Enterprise plan also gets verified email domains, single sign-on to the console (OpenID Connect or SAML 2.0) and a CSV export of its audit log:
+
+```sh
+pushward org domain add example.com              # prints the TXT record to publish
+pushward org domain verify example.com --wait 30m   # tries again every 15s until the record shows up (exit 7 if it never does)
+pushward org domain list
+pushward org sso show                            # the redirect URI, or SAML entity ID and ACS URL, to register at the provider
+pushward org sso set --enabled --require-sso     # flags left out keep their stored value
+pushward org sso set --client-secret-stdin < secret.txt   # rotates the OIDC client secret
+pushward org sso delete                          # asks first; --yes skips that
+pushward org audit export --from 2026-01-01 --to 2026-04-01   # saved under the server's file name; -o - for stdout
+```
+
+An owner sets up single sign-on, and changes its identity provider (the protocol, the OIDC issuer or client id, or the SAML entity ID, sign-in URL or signing certificates), in the PushWard console. An org admin key (`hlo_`) gets 403 for those; it can turn single sign-on on or off, change `--require-sso` and rotate the OIDC client secret. The client secret is read from stdin, never from a flag. `--from` and `--to` take a date (midnight UTC) or an RFC 3339 time; one export covers at most 366 days.
 
 ## Devices, shares and account settings
 

@@ -562,7 +562,7 @@ components:
             description: One answer button (2-4 per card).
             properties:
               authentication_required:
-                description: "Require device unlock before firing. Default false. The device enforces it, not the server: app builds that predate this field stay one-tap. Changing it starts a new round like any other option change."
+                description: "Require device unlock before firing. Default false. The device enforces it, not the server: on Android, builds that predate this field fire the option with one tap; a locked iPhone asks for Face ID or the passcode before any button, with or without it. Changing it starts a new round like any other option change."
                 type: boolean
               body:
                 description: HTTP request body for silent webhook. <=1KB. Ignored for custom-scheme URLs.
@@ -3042,6 +3042,17 @@ components:
           minimum: 0
           type: number
       type: object
+    CreateOrgDomainInputBody:
+      additionalProperties: false
+      properties:
+        domain:
+          description: The domain, e.g. example.com
+          maxLength: 255
+          minLength: 1
+          type: string
+      required:
+        - domain
+      type: object
     CreateOrgInviteInputBody:
       additionalProperties: false
       properties:
@@ -4075,6 +4086,18 @@ components:
       required:
         - items
       type: object
+    ListOrgDomainsOutputBody:
+      additionalProperties: false
+      properties:
+        domains:
+          items:
+            $ref: "#/components/schemas/OrgDomainItem"
+          type:
+            - array
+            - "null"
+      required:
+        - domains
+      type: object
     ListOrgGroupsOutputBody:
       additionalProperties: false
       properties:
@@ -4632,6 +4655,28 @@ components:
         - status
         - attempts
       type: object
+    OIDCStruct:
+      additionalProperties: false
+      properties:
+        client_id:
+          description: Setting or changing it takes an owner
+          maxLength: 512
+          minLength: 1
+          type: string
+        client_secret:
+          description: "Write-only: required when the connection is created or its issuer or client_id changes, omitted keeps the stored one"
+          maxLength: 4096
+          minLength: 1
+          type: string
+        issuer:
+          description: https URL; its /.well-known/openid-configuration is read when it is set or changed. Setting or changing it takes an owner
+          maxLength: 2048
+          minLength: 1
+          type: string
+      required:
+        - issuer
+        - client_id
+      type: object
     OnboardingSource:
       additionalProperties: false
       properties:
@@ -5039,6 +5084,43 @@ components:
         - user_id
         - device_id
       type: object
+    OrgDomainItem:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        domain:
+          description: Lowercase ASCII; an internationalized domain in punycode
+          type: string
+        id:
+          type: string
+        last_checked_at:
+          description: When the record was last looked up and answered
+          format: date-time
+          type: string
+        status:
+          enum:
+            - pending
+            - verified
+          type: string
+        txt_name:
+          description: The DNS name of the TXT record that verifies the domain
+          type: string
+        txt_value:
+          description: The TXT record's value
+          type: string
+        verified_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - domain
+        - status
+        - txt_name
+        - txt_value
+        - created_at
+      type: object
     OrgGroupItem:
       additionalProperties: false
       properties:
@@ -5152,6 +5234,9 @@ components:
           type: string
         id:
           type: string
+        limits:
+          $ref: "#/components/schemas/OrgLimitsItem"
+          description: The organization's caps; for owners, admins and billing members, on the read of one organization only
         member_count:
           format: int64
           type: integer
@@ -5216,6 +5301,54 @@ components:
           type:
             - array
             - "null"
+      type: object
+    OrgLimitsItem:
+      additionalProperties: false
+      properties:
+        admin_keys:
+          description: Most org admin keys (hlo_)
+          format: int64
+          type: integer
+        emails_per_month:
+          description: Emails the organization's keys send per UTC month while it is active
+          format: int64
+          type: integer
+        groups:
+          format: int64
+          type: integer
+        integration_keys:
+          description: Most of the organization's keys that send (hlk_)
+          format: int64
+          type: integer
+        members:
+          description: Most members
+          format: int64
+          type: integer
+        notifications_per_day:
+          description: Notifications the organization's keys send per UTC day while it is active
+          format: int64
+          type: integer
+        routes:
+          description: Most routing rules
+          format: int64
+          type: integer
+        tags:
+          format: int64
+          type: integer
+        widgets:
+          description: Most widgets the organization's keys keep
+          format: int64
+          type: integer
+      required:
+        - members
+        - integration_keys
+        - admin_keys
+        - groups
+        - tags
+        - routes
+        - widgets
+        - notifications_per_day
+        - emails_per_month
       type: object
     OrgMemberItem:
       additionalProperties: false
@@ -5323,6 +5456,101 @@ components:
         - allow_tag_ids
         - created_at
         - updated_at
+      type: object
+    OrgSSOCertificateItem:
+      additionalProperties: false
+      properties:
+        not_after:
+          description: Sign-ins signed with it fail after this
+          format: date-time
+          type: string
+        sha256_fingerprint:
+          description: Colon-separated upper case hex
+          type: string
+        subject:
+          type: string
+      required:
+        - sha256_fingerprint
+        - subject
+        - not_after
+      type: object
+    OrgSSOConnectionItem:
+      additionalProperties: false
+      properties:
+        configured:
+          type: boolean
+        enabled:
+          description: Whether people sign in with it
+          type: boolean
+        oidc:
+          $ref: "#/components/schemas/OrgSSOOIDCItem"
+        protocol:
+          enum:
+            - oidc
+            - saml
+          type: string
+        redirect_uri:
+          description: The redirect URI to register at an OIDC identity provider
+          type: string
+        require_sso:
+          description: Console sessions of members other than owners must have signed in with it
+          type: boolean
+        saml:
+          $ref: "#/components/schemas/OrgSSOSAMLItem"
+          description: The service provider values to register at a SAML identity provider, and a SAML connection's identity provider
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - configured
+        - redirect_uri
+      type: object
+    OrgSSOOIDCItem:
+      additionalProperties: false
+      properties:
+        client_id:
+          type: string
+        client_secret_set:
+          type: boolean
+        issuer:
+          type: string
+      required:
+        - issuer
+        - client_id
+        - client_secret_set
+      type: object
+    OrgSSOSAMLItem:
+      additionalProperties: false
+      properties:
+        acs_url:
+          description: The assertion consumer service URL (HTTP-POST) to register at the identity provider
+          type: string
+        idp_certificates:
+          description: "A SAML connection only: the signing certificates"
+          items:
+            $ref: "#/components/schemas/OrgSSOCertificateItem"
+          type:
+            - array
+            - "null"
+        idp_entity_id:
+          description: A SAML connection only
+          type: string
+        idp_metadata_url:
+          description: Where the metadata was read from; absent when it was uploaded
+          type: string
+        idp_sso_url:
+          description: "A SAML connection only: the HTTP-Redirect SingleSignOnService"
+          type: string
+        sp_entity_id:
+          description: The entity ID (audience) to register at the identity provider
+          type: string
+        sp_metadata_url:
+          description: This service provider's metadata, once the connection is SAML
+          type: string
+      required:
+        - sp_entity_id
+        - acs_url
+        - sp_metadata_url
       type: object
     OrgTagItem:
       additionalProperties: false
@@ -5492,6 +5720,31 @@ components:
           format: uri
           type: string
       type: object
+    PutOrgSSOConnectionInputBody:
+      additionalProperties: false
+      properties:
+        enabled:
+          description: Needs a verified domain
+          type: boolean
+        oidc:
+          $ref: "#/components/schemas/OIDCStruct"
+          description: With protocol oidc only
+        protocol:
+          enum:
+            - oidc
+            - saml
+          type: string
+        require_sso:
+          description: Console sessions of members other than owners must sign in with it
+          type: boolean
+        saml:
+          $ref: "#/components/schemas/SAMLStruct"
+          description: "With protocol saml only: idp_metadata_xml or idp_metadata_url, or neither to keep the stored identity provider (one is required when the connection is created or switched to SAML). A new protocol, entity ID, SSO URL or signing certificate takes an owner"
+      required:
+        - protocol
+        - enabled
+        - require_sso
+      type: object
     RecipientPathInputBody:
       additionalProperties: false
       type: object
@@ -5562,6 +5815,20 @@ components:
           type: integer
       required:
         - devices
+      type: object
+    SAMLStruct:
+      additionalProperties: false
+      properties:
+        idp_metadata_url:
+          description: An https URL the metadata is read from once, on this save
+          maxLength: 2048
+          minLength: 1
+          type: string
+        idp_metadata_xml:
+          description: The identity provider's metadata (an EntityDescriptor), instead of idp_metadata_url
+          maxLength: 524288
+          minLength: 1
+          type: string
       type: object
     SchedulePeriod:
       additionalProperties: false
@@ -13408,6 +13675,187 @@ paths:
       summary: Organization audit log
       tags:
         - Organizations
+  /orgs/{org_id}/audit-events/export:
+    get:
+      description: "The events created in [from, to) as CSV, oldest first: id, time, actor_kind, actor_user_id, key_id, key_name, action, target_kind, target_id, ip, user_agent, metadata (compact JSON). ip and user_agent are filled for owners and admins only. Cells a spreadsheet would read as a formula start with a single quote. Enterprise plan only; a few exports a minute per organization. Takes an org admin key (hlo_) at level read or manage."
+      operationId: exportOrgAuditEvents
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            type: string
+        - description: RFC 3339, inclusive; default 365 days before to
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: RFC 3339, inclusive; default 365 days before to
+            format: date-time
+            type: string
+        - description: RFC 3339, exclusive; default now
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: RFC 3339, exclusive; default now
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            text/csv:
+              schema:
+                type: string
+          description: The events as CSV
+          headers:
+            Content-Disposition:
+              schema:
+                description: attachment; filename="pushward-audit-<slug>-<from YYYYMMDD>-<to YYYYMMDD>.csv"
+                type: string
+            Content-Type:
+              schema:
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Org admin key past its expires_at
+                  value:
+                    code: org_admin_key.expired
+                    detail: org admin key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked key
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_required:
+                  summary: The organization is not on the Enterprise plan
+                  value:
+                    code: org.enterprise_required
+                    detail: This needs the Enterprise plan.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                level_too_low:
+                  summary: The caller's role does not read the audit log
+                  value:
+                    code: org.permission_denied
+                    detail: your role in this organization does not allow this
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_disabled:
+                  summary: Enterprise features are off on this server
+                  value:
+                    code: enterprise.disabled
+                    detail: enterprise features are not available
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                org_not_found:
+                  summary: No such organization, or the caller is not in it
+                  value:
+                    code: org.not_found
+                    detail: organization not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                org.audit_range_invalid:
+                  value:
+                    code: org.audit_range_invalid
+                    detail: from must not be after to, and the range must be at most 366 days
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Export the organization audit log
+      tags:
+        - Organizations
   /orgs/{org_id}/billing:
     get:
       description: Takes an org admin key (hlo_) at level read or manage.
@@ -13967,6 +14415,715 @@ paths:
       summary: List the members' devices
       tags:
         - Organizations
+  /orgs/{org_id}/domains:
+    get:
+      description: The domains the organization claims, each with the TXT record that verifies it. Enterprise plan only; owners and admins. Takes an org admin key (hlo_) at level read or manage.
+      operationId: listOrgDomains
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListOrgDomainsOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Org admin key past its expires_at
+                  value:
+                    code: org_admin_key.expired
+                    detail: org admin key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked key
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_required:
+                  summary: The organization is not on the Enterprise plan
+                  value:
+                    code: org.enterprise_required
+                    detail: This needs the Enterprise plan.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                level_too_low:
+                  summary: Not an owner or admin, or a read key on a write
+                  value:
+                    code: org.permission_denied
+                    detail: your role in this organization does not allow this
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                sso_required:
+                  summary: The organization requires a single sign-on console session
+                  value:
+                    code: org.sso_required
+                    detail: This organization requires signing in with single sign-on.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_disabled:
+                  summary: Enterprise features are off on this server
+                  value:
+                    code: enterprise.disabled
+                    detail: enterprise features are not available
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                org_not_found:
+                  summary: No such organization, or the caller is not in it
+                  value:
+                    code: org.not_found
+                    detail: organization not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: List the organization's email domains
+      tags:
+        - Organizations
+    post:
+      description: "Pending until verified: publish the TXT record txt_name with the value txt_value, then verify. At most 20 per organization. Enterprise plan only; owners and admins. Takes an org admin key (hlo_) at level manage."
+      operationId: createOrgDomain
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrgDomainInputBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgDomainItem"
+          description: Created
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Org admin key past its expires_at
+                  value:
+                    code: org_admin_key.expired
+                    detail: org admin key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked key
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_required:
+                  summary: The organization is not on the Enterprise plan
+                  value:
+                    code: org.enterprise_required
+                    detail: This needs the Enterprise plan.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                level_too_low:
+                  summary: Not an owner or admin, or a read key on a write
+                  value:
+                    code: org.permission_denied
+                    detail: your role in this organization does not allow this
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                sso_required:
+                  summary: The organization requires a single sign-on console session
+                  value:
+                    code: org.sso_required
+                    detail: This organization requires signing in with single sign-on.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_disabled:
+                  summary: Enterprise features are off on this server
+                  value:
+                    code: enterprise.disabled
+                    detail: enterprise features are not available
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                org_not_found:
+                  summary: No such organization, or the caller is not in it
+                  value:
+                    code: org.not_found
+                    detail: organization not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              examples:
+                domain_exists:
+                  summary: The organization already has the domain
+                  value:
+                    code: org.domain_exists
+                    detail: the organization already has this domain
+                    instance: /requests/9f86d081884c7d65
+                    status: 409
+                    title: Conflict
+                    type: https://pushward.app/errors/conflict
+                domain_limit:
+                  summary: The organization has 20 domains
+                  value:
+                    code: org.domain_limit
+                    detail: an organization has at most 20 domains; remove one first
+                    instance: /requests/9f86d081884c7d65
+                    status: 409
+                    title: Conflict
+                    type: https://pushward.app/errors/conflict
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                org.domain_invalid:
+                  value:
+                    code: org.domain_invalid
+                    detail: "the domain must be a hostname like example.com: not an IP address and not a public suffix like com or co.uk"
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Add an email domain
+      tags:
+        - Organizations
+  /orgs/{org_id}/domains/{domain_id}:
+    delete:
+      description: Refused for the last verified domain while single sign-on is on. Enterprise plan only; owners and admins. Takes an org admin key (hlo_) at level manage.
+      operationId: deleteOrgDomain
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: domain_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Org admin key past its expires_at
+                  value:
+                    code: org_admin_key.expired
+                    detail: org admin key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked key
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_required:
+                  summary: The organization is not on the Enterprise plan
+                  value:
+                    code: org.enterprise_required
+                    detail: This needs the Enterprise plan.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                level_too_low:
+                  summary: Not an owner or admin, or a read key on a write
+                  value:
+                    code: org.permission_denied
+                    detail: your role in this organization does not allow this
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                sso_required:
+                  summary: The organization requires a single sign-on console session
+                  value:
+                    code: org.sso_required
+                    detail: This organization requires signing in with single sign-on.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_disabled:
+                  summary: Enterprise features are off on this server
+                  value:
+                    code: enterprise.disabled
+                    detail: enterprise features are not available
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                org_not_found:
+                  summary: No such organization, or the caller is not in it
+                  value:
+                    code: org.not_found
+                    detail: organization not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              examples:
+                org.sso_needs_domain:
+                  value:
+                    code: org.sso_needs_domain
+                    detail: single sign-on is on and this is the organization's last verified domain; turn single sign-on off first
+                    instance: /requests/9f86d081884c7d65
+                    status: 409
+                    title: Conflict
+                    type: https://pushward.app/errors/conflict
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Conflict
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Remove an email domain
+      tags:
+        - Organizations
+  /orgs/{org_id}/domains/{domain_id}/verify:
+    post:
+      description: "Looks the domain's TXT record up. A domain is verified by one organization at most: the first to verify it. Verified domains are checked daily and lapse after seven missed checks in a row. Enterprise plan only; owners and admins. Takes an org admin key (hlo_) at level manage."
+      operationId: verifyOrgDomain
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: domain_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgDomainItem"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Org admin key past its expires_at
+                  value:
+                    code: org_admin_key.expired
+                    detail: org admin key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked key
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_required:
+                  summary: The organization is not on the Enterprise plan
+                  value:
+                    code: org.enterprise_required
+                    detail: This needs the Enterprise plan.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                level_too_low:
+                  summary: Not an owner or admin, or a read key on a write
+                  value:
+                    code: org.permission_denied
+                    detail: your role in this organization does not allow this
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                sso_required:
+                  summary: The organization requires a single sign-on console session
+                  value:
+                    code: org.sso_required
+                    detail: This organization requires signing in with single sign-on.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                domain_not_found:
+                  summary: No such domain
+                  value:
+                    code: org.domain_not_found
+                    detail: the organization has no such domain
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                enterprise_disabled:
+                  summary: Enterprise features are off on this server
+                  value:
+                    code: enterprise.disabled
+                    detail: enterprise features are not available
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                org_not_found:
+                  summary: No such organization, or the caller is not in it
+                  value:
+                    code: org.not_found
+                    detail: organization not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              examples:
+                org.domain_taken:
+                  value:
+                    code: org.domain_taken
+                    detail: another organization has already verified this domain
+                    instance: /requests/9f86d081884c7d65
+                    status: 409
+                    title: Conflict
+                    type: https://pushward.app/errors/conflict
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                org.domain_not_verified:
+                  value:
+                    code: org.domain_not_verified
+                    detail: The TXT record was not found yet. DNS changes can take a while to appear.
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Verify an email domain
+      tags:
+        - Organizations
   /orgs/{org_id}/groups:
     get:
       description: Takes an org admin key (hlo_) at level read or manage.
@@ -14106,6 +15263,14 @@ paths:
           name: org_id
           required: true
           schema:
+            type: string
+        - description: "Identifies this create across retries, so a repeated request does not make a second one. Use a new random value for each create: a request repeating a value gets the group or tag the first attempt made, whatever its body. A value applies per caller (each org admin key, or the signed-in user) for as long as that group or tag exists. Printable ASCII without spaces."
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: "Identifies this create across retries, so a repeated request does not make a second one. Use a new random value for each create: a request repeating a value gets the group or tag the first attempt made, whatever its body. A value applies per caller (each org admin key, or the signed-in user) for as long as that group or tag exists. Printable ASCII without spaces."
+            maxLength: 128
+            pattern: ^[!-~]+$
             type: string
       requestBody:
         content:
@@ -15116,6 +16281,14 @@ paths:
           required: true
           schema:
             type: string
+        - description: "Identifies this create across retries, so a repeated request does not make or mail a second invite. Use a new random value for each create: a request repeating a value gets the invite the first attempt made, whatever its body, without its code and with no mail sent. A value applies per caller (each org admin key, or the signed-in user) until that invite is revoked or expires. Printable ASCII without spaces."
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: "Identifies this create across retries, so a repeated request does not make or mail a second invite. Use a new random value for each create: a request repeating a value gets the invite the first attempt made, whatever its body, without its code and with no mail sent. A value applies per caller (each org admin key, or the signed-in user) until that invite is revoked or expires. Printable ASCII without spaces."
+            maxLength: 128
+            pattern: ^[!-~]+$
+            type: string
       requestBody:
         content:
           application/json:
@@ -15754,6 +16927,14 @@ paths:
           name: org_id
           required: true
           schema:
+            type: string
+        - description: "Identifies this create across retries, so a repeated request does not make a second key. Use a new random value for each create: a request repeating a value gets the key the first attempt made, whatever its body, without key: the secret is shown only once. A value applies per caller (each org admin key, or the signed-in user) until that key is revoked. Printable ASCII without spaces."
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: "Identifies this create across retries, so a repeated request does not make a second key. Use a new random value for each create: a request repeating a value gets the key the first attempt made, whatever its body, without key: the secret is shown only once. A value applies per caller (each org admin key, or the signed-in user) until that key is revoked. Printable ASCII without spaces."
+            maxLength: 128
+            pattern: ^[!-~]+$
             type: string
       requestBody:
         content:
@@ -17524,6 +18705,14 @@ paths:
           required: true
           schema:
             type: string
+        - description: "Identifies this create across retries, so a repeated request does not add the rule twice. Use a new random value for each create: a request repeating a value gets the rule the first attempt added, whatever its body. A value applies per caller (each org admin key, or the signed-in user) for as long as the rule exists. Printable ASCII without spaces."
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: "Identifies this create across retries, so a repeated request does not add the rule twice. Use a new random value for each create: a request repeating a value gets the rule the first attempt added, whatever its body. A value applies per caller (each org admin key, or the signed-in user) for as long as the rule exists. Printable ASCII without spaces."
+            maxLength: 128
+            pattern: ^[!-~]+$
+            type: string
       requestBody:
         content:
           application/json:
@@ -18456,6 +19645,541 @@ paths:
       summary: Change a routing rule
       tags:
         - Organizations
+  /orgs/{org_id}/sso:
+    delete:
+      description: Console sessions it signed in stay valid until they expire. In the console, needs a sign-in within the last 15 minutes. Enterprise plan only; owners and admins. Takes an org admin key (hlo_) at level manage.
+      operationId: deleteOrgSSOConnection
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Org admin key past its expires_at
+                  value:
+                    code: org_admin_key.expired
+                    detail: org admin key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked key
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_required:
+                  summary: The organization is not on the Enterprise plan
+                  value:
+                    code: org.enterprise_required
+                    detail: This needs the Enterprise plan.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                level_too_low:
+                  summary: Not an owner or admin, or a read key on a write
+                  value:
+                    code: org.permission_denied
+                    detail: your role in this organization does not allow this
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                sso_required:
+                  summary: The organization requires a single sign-on console session
+                  value:
+                    code: org.sso_required
+                    detail: This organization requires signing in with single sign-on.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_disabled:
+                  summary: Enterprise features are off on this server
+                  value:
+                    code: enterprise.disabled
+                    detail: enterprise features are not available
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                org_not_found:
+                  summary: No such organization, or the caller is not in it
+                  value:
+                    code: org.not_found
+                    detail: organization not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                sso_not_found:
+                  summary: No connection
+                  value:
+                    code: org.sso_not_found
+                    detail: the organization has no single sign-on connection
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Remove single sign-on
+      tags:
+        - Organizations
+    get:
+      description: "Always 200: configured says whether there is a connection, redirect_uri is what to register at an OIDC identity provider and saml's sp_entity_id and acs_url at a SAML one. The client secret is never returned. Enterprise plan only; owners and admins. Takes an org admin key (hlo_) at level read or manage."
+      operationId: getOrgSSOConnection
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgSSOConnectionItem"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Org admin key past its expires_at
+                  value:
+                    code: org_admin_key.expired
+                    detail: org admin key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked key
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_required:
+                  summary: The organization is not on the Enterprise plan
+                  value:
+                    code: org.enterprise_required
+                    detail: This needs the Enterprise plan.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                level_too_low:
+                  summary: Not an owner or admin, or a read key on a write
+                  value:
+                    code: org.permission_denied
+                    detail: your role in this organization does not allow this
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                sso_required:
+                  summary: The organization requires a single sign-on console session
+                  value:
+                    code: org.sso_required
+                    detail: This organization requires signing in with single sign-on.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_disabled:
+                  summary: Enterprise features are off on this server
+                  value:
+                    code: enterprise.disabled
+                    detail: enterprise features are not available
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                org_not_found:
+                  summary: No such organization, or the caller is not in it
+                  value:
+                    code: org.not_found
+                    detail: organization not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Get the organization's single sign-on
+      tags:
+        - Organizations
+    put:
+      description: OpenID Connect (protocol oidc) or SAML 2.0 (protocol saml). The issuer's discovery document is read and checked when the issuer is set or changed. Only an owner sets it up or changes its issuer or client_id, and then sends the client_secret again; admins and manage keys change the rest. SAML takes the identity provider's metadata, uploaded or read once from an https URL; only an owner sets it up or saves metadata with another entity ID or other signing certificates (a certificate rotation), and switching protocol takes an owner too. Turning it on needs a verified domain; require_sso makes it the only console sign-in for members other than owners. In the console, needs a sign-in within the last 15 minutes. Enterprise plan only; owners and admins. Takes an org admin key (hlo_) at level manage.
+      operationId: putOrgSSOConnection
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutOrgSSOConnectionInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrgSSOConnectionItem"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              examples:
+                request.body_invalid:
+                  value:
+                    code: request.body_invalid
+                    detail: send saml.idp_metadata_xml or saml.idp_metadata_url, not both
+                    instance: /requests/9f86d081884c7d65
+                    status: 400
+                    title: Bad Request
+                    type: https://pushward.app/errors/bad-request
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Org admin key past its expires_at
+                  value:
+                    code: org_admin_key.expired
+                    detail: org admin key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked key
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_required:
+                  summary: The organization is not on the Enterprise plan
+                  value:
+                    code: org.enterprise_required
+                    detail: This needs the Enterprise plan.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                level_too_low:
+                  summary: Not an owner or admin, or a read key on a write
+                  value:
+                    code: org.permission_denied
+                    detail: your role in this organization does not allow this
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                reauth_required:
+                  summary: The console session signed in over 15 minutes ago
+                  value:
+                    code: auth.reauth_required
+                    detail: sign in again to change single sign-on
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+                sso_required:
+                  summary: The organization requires a single sign-on console session
+                  value:
+                    code: org.sso_required
+                    detail: This organization requires signing in with single sign-on.
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                enterprise_disabled:
+                  summary: Enterprise features are off on this server
+                  value:
+                    code: enterprise.disabled
+                    detail: enterprise features are not available
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+                org_not_found:
+                  summary: No such organization, or the caller is not in it
+                  value:
+                    code: org.not_found
+                    detail: organization not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              examples:
+                org.sso_needs_domain:
+                  value:
+                    code: org.sso_needs_domain
+                    detail: verify one of the organization's domains before turning single sign-on on
+                    instance: /requests/9f86d081884c7d65
+                    status: 409
+                    title: Conflict
+                    type: https://pushward.app/errors/conflict
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                discovery_failed:
+                  summary: The issuer's discovery document is unusable
+                  value:
+                    code: org.sso_discovery_failed
+                    detail: the discovery document names a different issuer; the issuer must match it exactly
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+                metadata_invalid:
+                  summary: The SAML metadata is unusable
+                  value:
+                    code: org.sso_metadata_invalid
+                    detail: the IDPSSODescriptor has no https SingleSignOnService with the HTTP-Redirect binding
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+                secret_required:
+                  summary: No client secret sent or stored
+                  value:
+                    code: org.sso_secret_required
+                    detail: oidc.client_secret is required when the connection is created or its issuer or client_id changes
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Set up single sign-on
+      tags:
+        - Organizations
   /orgs/{org_id}/tags:
     get:
       description: Takes an org admin key (hlo_) at level read or manage.
@@ -18595,6 +20319,14 @@ paths:
           name: org_id
           required: true
           schema:
+            type: string
+        - description: "Identifies this create across retries, so a repeated request does not make a second one. Use a new random value for each create: a request repeating a value gets the group or tag the first attempt made, whatever its body. A value applies per caller (each org admin key, or the signed-in user) for as long as that group or tag exists. Printable ASCII without spaces."
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: "Identifies this create across retries, so a repeated request does not make a second one. Use a new random value for each create: a request repeating a value gets the group or tag the first attempt made, whatever its body. A value applies per caller (each org admin key, or the signed-in user) for as long as that group or tag exists. Printable ASCII without spaces."
+            maxLength: 128
+            pattern: ^[!-~]+$
             type: string
       requestBody:
         content:

@@ -154,6 +154,10 @@ func usagef(format string, args ...any) error {
 // response is still printed.
 var errWaitTimeout = errors.New("timed out waiting for an answer")
 
+// errNotFound is something the CLI looked up itself and did not find; it
+// exits 4 like a 404.
+var errNotFound = errors.New("not found")
+
 var errNoToken = errors.New("no API key: set " + config.EnvToken + " or run `pushward auth login`")
 
 var errNoOrgToken = errors.New("no org admin key: set " + config.EnvOrgToken + " or run `pushward auth login --org`")
@@ -173,6 +177,8 @@ func ExitCode(err error) int {
 		return ExitUsage
 	case errors.Is(err, errWaitTimeout):
 		return ExitWaitTimeout
+	case errors.Is(err, errNotFound):
+		return ExitNotFound
 	case errors.Is(err, errNoToken), errors.Is(err, errNoOrgToken), errors.Is(err, errOrgKeyAsToken):
 		return ExitAuth
 	case errors.As(err, &ae):

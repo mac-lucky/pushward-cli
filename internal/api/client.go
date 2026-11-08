@@ -58,16 +58,38 @@ type Request struct {
 	// Timeout applies per attempt. Zero means 30s, or for a ?wait= long-poll
 	// the wait plus slack.
 	Timeout time.Duration
+	// Stream leaves a 2xx body unread in Response.Stream, for a download too
+	// large to hold in memory. Timeout then covers reading it too.
+	Stream bool
+	// NoReplay retries a GET only on 429 and 503, as a POST is, for a read
+	// the server counts and records each time it arrives.
+	NoReplay bool
 }
 
 type Response struct {
 	Status int
 	Header http.Header
 	Body   []byte
+	// Stream is the unread body of a 2xx answer to a Stream request. The
+	// caller closes it.
+	Stream io.ReadCloser
+}
+
+// streamBody ends the attempt's timeout once the caller is done reading.
+type streamBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *streamBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
 }
 
 // Call runs an operation from the table with its path parameters filled in.
-// It is the only way the CLI's commands reach the API.
+// Commands reach the API through it, except pushward api and the audit
+// export, which build their Request and go to Do.
 func (c *Client) Call(ctx context.Context, opID string, params map[string]string, query url.Values, body []byte) (*Response, error) {
 	op := Op(opID)
 	path, err := op.Expand(params)
@@ -81,9 +103,9 @@ func (c *Client) Call(ctx context.Context, opID string, params map[string]string
 // 429 and 503 ask the client to come back, so every method retries them. A 503
 // can still follow a write that landed, so a POST carries one Idempotency-Key
 // across its attempts and the notification endpoints use it to send once. Other
-// 5xx and transport errors retry only for GET and DELETE: a replayed POST /emails
-// sends twice, and a replayed PATCH on a timeline activity appends its data point
-// twice.
+// 5xx and transport errors retry only for GET and DELETE (unless NoReplay): a
+// replayed POST /emails sends twice, and a replayed PATCH on a timeline activity
+// appends its data point twice.
 func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 	if req.Timeout <= 0 {
 		req.Timeout = defaultTimeout
@@ -91,7 +113,7 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 			req.Timeout = time.Duration(w)*time.Second + longPollSlack
 		}
 	}
-	idempotent := req.Method == http.MethodGet || req.Method == http.MethodDelete || req.Method == http.MethodHead
+	idempotent := !req.NoReplay && (req.Method == http.MethodGet || req.Method == http.MethodDelete || req.Method == http.MethodHead)
 	if req.Method == http.MethodPost && req.Header.Get(idempotencyKeyHeader) == "" {
 		header := req.Header.Clone()
 		if header == nil {
@@ -164,7 +186,12 @@ func retryable(status int, code string, idempotent bool) bool {
 
 func (c *Client) once(ctx context.Context, req Request) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, req.Timeout)
-	defer cancel()
+	streaming := false
+	defer func() {
+		if !streaming {
+			cancel()
+		}
+	}()
 
 	u := strings.TrimRight(c.BaseURL, "/") + req.Path
 	if len(req.Query) > 0 {
@@ -198,7 +225,9 @@ func (c *Client) once(ctx context.Context, req Request) (*Response, error) {
 		}
 		hr.Header.Set("Content-Type", ct)
 	}
-	hr.Header.Set("Accept", "application/json")
+	if hr.Header.Get("Accept") == "" {
+		hr.Header.Set("Accept", "application/json")
+	}
 	if c.UserAgent != "" {
 		hr.Header.Set("User-Agent", c.UserAgent)
 	}
@@ -217,6 +246,13 @@ func (c *Client) once(ctx context.Context, req Request) (*Response, error) {
 			fmt.Fprintf(c.Debug, "%s %s: %v\n", req.Method, u, err)
 		}
 		return nil, err
+	}
+	if req.Stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if c.Debug != nil {
+			fmt.Fprintf(c.Debug, "%s %s: %d (%s, streaming)\n", req.Method, u, resp.StatusCode, time.Since(t0).Round(time.Millisecond))
+		}
+		streaming = true
+		return &Response{Status: resp.StatusCode, Header: resp.Header, Stream: &streamBody{resp.Body, cancel}}, nil
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))

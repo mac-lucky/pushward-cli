@@ -268,6 +268,23 @@ wait for the user's yes first. `org key create`, `org key roll` and `org invite 
 only when asked, and pass it straight to where the user wants it with `--jq .key` or
 `--jq .code`. `org member invite` mails the code instead and prints none.
 
+On the Enterprise plan (403 `org.enterprise_required` otherwise) the same key reaches the
+verified email domains, single sign-on and the audit log export (needs CLI 1.12.0):
+
+```sh
+pushward org domain add example.com
+pushward org domain verify example.com --wait 30m
+pushward org sso show
+pushward org sso set --enabled --require-sso
+pushward org audit export --from 2026-01-01 --to 2026-04-01 -o audit.csv
+```
+
+`org domain add` prints the TXT record the user has to publish in their DNS; `--wait` keeps
+checking every 15s while it is not visible yet. `org sso set` with `--client-secret-stdin`
+reads an OIDC client secret: let the user run that one themselves. Setting single sign-on up
+or changing its identity provider takes an owner, so a 403 there means the user does it in
+the console. `org sso delete` asks first unless `--yes`.
+
 ## Devices, shares and settings
 
 With a key at the devices, sharing or account level (each none, read or manage), the CLI
