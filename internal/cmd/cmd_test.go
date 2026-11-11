@@ -425,6 +425,24 @@ func TestActivityEndNoDisplayTime(t *testing.T) {
 	}
 }
 
+func TestActivityEndChecklist(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("GET /activities/shop", 200, `{"slug":"shop","state":"ongoing","content":{"template":"checklist","state":"1 of 2","progress":0.5,"icon":"cart","items":[{"id":"milk","label":"Milk","checked":true},{"id":"eggs","label":"Eggs","checked":false}]}}`)
+	f.reply("PATCH /activities/shop", 200, `{"slug":"shop","state":"ended"}`)
+	// The server writes "1 of 2" over any state, so none goes out, and an
+	// icon and a colour alone end in the same patch rather than a held frame.
+	r := runCLI(t, srv, nil, "", "activity", "end", "shop", "--status", "success", "--text", "Done")
+	want := `{"content":{"accent_color":"green","icon":"checkmark.circle.fill","template":"checklist"},"state":"ended"}`
+	if r.code != 0 || len(f.calls) != 2 || mustJSON(t, f.calls[1].Body) != want || len(r.sleeps) != 0 {
+		t.Errorf("exit %d calls %d sleeps %v body %s", r.code, len(f.calls), r.sleeps, mustJSON(t, f.calls[len(f.calls)-1].Body))
+	}
+
+	r = runCLI(t, srv, nil, "", "activity", "end", "shop")
+	if r.code != 0 || mustJSON(t, f.calls[len(f.calls)-1].Body) != `{"state":"ended"}` {
+		t.Errorf("no status: exit %d body %s", r.code, mustJSON(t, f.calls[len(f.calls)-1].Body))
+	}
+}
+
 func TestActivityEndMissing(t *testing.T) {
 	_, srv := newFake(t)
 	r := runCLI(t, srv, nil, "", "activity", "end", "gone")

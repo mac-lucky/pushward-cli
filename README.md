@@ -114,7 +114,7 @@ pushward activity update deploy --step 2/3 --text Testing
 pushward activity end deploy --status success
 ```
 
-`activity end --status success|failure|cancelled` shows a final frame first (green check, red cross or grey stop, with the progress filled on success), holds it for `--display-time` (4s by default) and then ends the card, so the Lock Screen shows the outcome instead of a card that just vanishes. `--text`, `--icon` and `--color` override the preset.
+`activity end --status success|failure|cancelled` shows a final frame first (green check, red cross or grey stop, with the progress filled on success), holds it for `--display-time` (4s by default) and then ends the card, so the Lock Screen shows the outcome instead of a card that just vanishes. `--text`, `--icon` and `--color` override the preset. A checklist keeps its "2 of 3" count, which the server writes, and ends at once with the new icon and color.
 
 All eleven templates work. For the ones without a dedicated flag, set content fields directly:
 

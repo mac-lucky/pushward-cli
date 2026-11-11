@@ -398,7 +398,8 @@ showed.
 
 --status success|failure|cancelled sets the text, icon and color (the values
 of GitHub's job.status). --text, --icon and --color override them. Approval
-cards keep their question and icon.`,
+cards keep their question and icon. A checklist keeps its "2 of 3" count
+(the server writes that text) and ends in one step with the icon and color.`,
 		Args: checkArgs,
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
@@ -432,6 +433,7 @@ cards keep their question and icon.`,
 			}
 
 			stored, _ := current["content"].(map[string]any)
+			checklist := str(current, "content", "template") == "checklist"
 			first := map[string]any{}
 			if delta := endDelta(stored, status); delta != nil {
 				for k, v := range map[string]string{"state": text, "icon": icon, "accent_color": color} {
@@ -439,11 +441,17 @@ cards keep their question and icon.`,
 						delta[k] = v
 					}
 				}
+				if checklist {
+					// The server writes the count ("2 of 3") over state.
+					delete(delta, "state")
+				}
 				first["content"] = delta
 			}
 			body.Merge(first, extra)
 
-			if displayTime > 0 && frameChanges(first, stored) {
+			// A checklist's final frame is only an icon and a colour, not
+			// worth holding the card for; they ride the end patch instead.
+			if displayTime > 0 && !checklist && frameChanges(first, stored) {
 				first["state"] = "ongoing"
 				if _, err := a.call(ctx, "updateActivity", params, nil, first); err != nil {
 					return err
