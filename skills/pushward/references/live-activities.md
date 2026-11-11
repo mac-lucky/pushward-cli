@@ -138,6 +138,27 @@ card, and `on_expire` names the option the server records if nobody answers by t
 acting on the option. Three or more options need an icon each, which `--option` cannot set, so
 add them by index: `-f content.options[0].icon=trash -f content.options[1].icon=archivebox`.
 
+## checklist: items the user ticks off
+
+```sh
+pushward activity start agent-release-prep --name "Release prep" --template checklist --ended-ttl 30m \
+  -F 'content.items=[{"id":"notes","label":"Write release notes"},{"id":"tag","label":"Tag v2.4"},{"id":"post","label":"Post in #releases"}]'
+pushward activity wait agent-release-prep --timeout 9m --jq '{state: .state, done: [.content.items[] | select(.checked) | .id]}'
+```
+
+1 to 8 items, each with an `id` (up to 16 letters, digits, `-` or `_`), a `label` of up to 40
+characters and an optional `checked`. The user ticks rows from the Lock Screen, the watch, the
+Mac or the Android notification. The list is replaced whole on every update, like board tiles,
+but an item that keeps its `id` and leaves `checked` out keeps its tick, so resending the list
+never undoes what the user did; `"checked": true` ticks one from your side. Leave `--text` and
+`--progress` out: the server fills both from the count for app builds that predate the
+template.
+
+`activity wait` returns as soon as an item is ticked or unticked, or the card ends, and prints
+the activity; run it again for the next tick until `state` is `ended`. It exits 7 when nothing
+changed during the wait. Once every item is checked the server ends the card a few seconds
+later, so a wait on a finished list returns at once. Waiting on a checklist needs CLI 1.13.0.
+
 ## media: a now-playing card
 
 Cover art, a scrubber and transport buttons that call your webhooks. It is for players rather

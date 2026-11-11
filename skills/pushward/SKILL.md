@@ -207,6 +207,20 @@ pushward schedule cancel <id> --purge
 pushward email send --to ops@example.com --subject "Nightly report" --text-file report.txt
 ```
 
+For a daily count over weeks (commits, builds, failed jobs), the `heatmap` template draws a
+calendar grid:
+
+```sh
+pushward widget create agent-commits --name Commits --template heatmap --label commits \
+  -F 'content.cells=[4,0,null,7,2,0,11,3,5,null,1,6,0,2]'
+```
+
+`cells` holds 7 to 154 raw daily values, oldest first; the last one is today (or the day of
+`-F content.end_date=<RFC 3339>`). Send the numbers, not levels: the app shades them from
+`--min` and `--max`, or from 0 and the largest value. `null` is a day with no data and draws
+an empty cell, unlike `0`. The array is replaced whole, so every update carries all the days.
+App builds that predate the template show an "update the app" placeholder.
+
 A scheduled notification is held by the server, so nothing needs to keep running. Cron
 sends must be at least 15 minutes apart, and an account can have 25 pending. Keep the `id`
 from the create output if you may need to cancel it.

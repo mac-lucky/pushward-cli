@@ -116,7 +116,7 @@ pushward activity end deploy --status success
 
 `activity end --status success|failure|cancelled` shows a final frame first (green check, red cross or grey stop, with the progress filled on success), holds it for `--display-time` (4s by default) and then ends the card, so the Lock Screen shows the outcome instead of a card that just vanishes. `--text`, `--icon` and `--color` override the preset.
 
-All ten templates work. For the ones without a dedicated flag, set content fields directly:
+All eleven templates work. For the ones without a dedicated flag, set content fields directly:
 
 ```sh
 pushward activity update ci -F content.progress=0.4 -f content.state="Compiling"
@@ -129,6 +129,8 @@ An approval card waits for a decision the same way a notification does:
 pushward activity start release --template approval --text "Ship 2.4?" --option ship=Ship --option hold=Hold
 pushward activity wait release --timeout 30m --jq .content.answer.option
 ```
+
+On a checklist card `activity wait` returns when an item is ticked or unticked, or the card ends, and `content.items` has the ticks.
 
 The timer template counts down to `--eta` or `--duration`, or with `--direction up` it shows how long something has been going. The server runs the clock, so it needs no updates in between:
 
