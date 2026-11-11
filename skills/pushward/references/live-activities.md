@@ -150,7 +150,10 @@ pushward activity wait agent-release-prep --timeout 9m --jq '{state: .state, don
 characters and an optional `checked`. The user ticks rows from the Lock Screen, the watch, the
 Mac or the Android notification. The list is replaced whole on every update, like board tiles,
 but an item that keeps its `id` and leaves `checked` out keeps its tick, so resending the list
-never undoes what the user did; `"checked": true` ticks one from your side. Leave `--text` and
+does not undo what the user did; `"checked": true` ticks one from your side. The exception is
+a restart: an update that sets an ended checklist back to `ongoing` starts a new run, and every
+item sent without `checked` starts unticked. `activity start` sends `ongoing`, so running it
+again on a list that already finished brings it back with nothing ticked. Leave `--text` and
 `--progress` out: the server fills both from the count for app builds that predate the
 template.
 

@@ -219,7 +219,9 @@ pushward widget create agent-commits --name Commits --template heatmap --label c
 `-F content.end_date=<RFC 3339>`). Send the numbers, not levels: the app shades them from
 `--min` and `--max`, or from 0 and the largest value. `null` is a day with no data and draws
 an empty cell, unlike `0`. The array is replaced whole, so every update carries all the days.
-App builds that predate the template show an "update the app" placeholder.
+iPhone, watch and Mac builds older than 1.6.0 are not sent the widget at all; later builds
+that predate the template, and every Android build that does not know it, show an "update
+the app" placeholder.
 
 A scheduled notification is held by the server, so nothing needs to keep running. Cron
 sends must be at least 15 minutes apart, and an account can have 25 pending. Keep the `id`
