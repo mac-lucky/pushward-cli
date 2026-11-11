@@ -130,7 +130,7 @@ pushward activity start release --template approval --text "Ship 2.4?" --option 
 pushward activity wait release --timeout 30m --jq .content.answer.option
 ```
 
-On a checklist card `activity wait` returns when an item is ticked or unticked, or the card ends, and `content.items` has the ticks. Pass the ids you last saw checked with `--checked` and it returns at once if something was ticked in between.
+On a checklist card `activity wait` returns when an item is ticked or unticked, or the card ends, and `content.items` has the ticks. Pass the ids you last saw checked with `--checked` and it returns at once if something was ticked in between. A finished list ends itself a few seconds after the last tick; send `-F content.auto_end=false` to keep it open (the card says "All done") until you run `activity end`, and stop waiting once every item is checked, because that list won't end on its own.
 
 The timer template counts down to `--eta` or `--duration`, or with `--direction up` it shows how long something has been going. The server runs the clock, so it needs no updates in between:
 

@@ -572,6 +572,8 @@ ends, or --timeout passes, and prints the activity with content.items. An
 ended checklist returns at once. Exits 7 on timeout. --checked takes the ids
 you last saw checked (--checked '' for none) and returns at once when the
 list has moved on from them, so a tick between two waits is not missed.
+A list started with -F content.auto_end=false stays open once every item is
+checked, so a wait on it then returns only for an untick or your own end.
 
   pushward activity wait groceries --timeout 1h --checked milk,eggs \
     --jq '[.content.items[] | select(.checked) | .id] | join(",")'`,
@@ -665,7 +667,8 @@ func (cl checklist) checkedIDs() []string {
 // waitChecklist returns once the items differ from first or the activity
 // ends. An ended checklist returns at once, and so does one whose checked
 // ids differ from seen (nil when the caller passed no --checked). A fully
-// checked list waits too: the server ends it a few seconds later.
+// checked list waits too: the server ends it a few seconds later, or with
+// auto_end false only an untick or the caller's own end moves it.
 func (a *App) waitChecklist(ctx context.Context, slug string, first []byte, seen []string, timeout time.Duration) error {
 	cl := parseChecklist(first)
 	base := cl.Content.Items

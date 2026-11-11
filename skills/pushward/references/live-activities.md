@@ -164,6 +164,14 @@ landed while you were busy then returns at once instead of sitting out the whole
 Exit 7 means nothing changed during the wait. Once every item is checked the server ends the
 card a few seconds later and the wait returns then. Waiting on a checklist needs CLI 1.13.0.
 
+To keep a finished list on screen, send `-F content.auto_end=false` with `start` or `update`.
+The server then leaves a complete list ongoing (the card reads "All done") until you run
+`activity end`, or `--stale-ttl` and the usual limits end it. Such a list never reaches
+`ended` by itself, so stop looping once every item is checked instead of waiting for `state`
+to change: another wait on it returns only when someone unticks a row. `-F content.auto_end=null`
+or `true` goes back to the default, and on a list that is already complete that ends it a few
+seconds later. Leaving the key out of an update keeps what is stored.
+
 ## media: a now-playing card
 
 Cover art, a scrubber and transport buttons that call your webhooks. It is for players rather
