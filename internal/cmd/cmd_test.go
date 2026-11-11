@@ -503,6 +503,7 @@ func TestActivityWaitChecklist(t *testing.T) {
 		{"ticked since last seen", []string{"--checked", "milk"}, []string{allDone}, 0, 1, "ongoing:milk,eggs"},
 		{"none seen", []string{"--checked", ""}, []string{ticked}, 0, 1, "ongoing:milk"},
 		{"as last seen", []string{"--checked", "eggs,milk"}, []string{allDone, endedDone}, 0, 2, "ended:milk,eggs"},
+		{"as last seen, spaced", []string{"--checked", "eggs, milk,"}, []string{allDone, endedDone}, 0, 2, "ended:milk,eggs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, srv := newFake(t)

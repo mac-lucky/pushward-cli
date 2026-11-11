@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -662,7 +663,15 @@ func (a *App) waitChecklist(ctx context.Context, slug string, first []byte, seen
 	base := cl.Content.Items
 	last := first
 	var err error
-	moved := seen != nil && !slices.Equal(cl.checkedIDs(), slices.Compact(slices.Sorted(slices.Values(seen))))
+	// "milk, eggs" and a trailing comma mean the same ids as "milk,eggs".
+	want := make([]string, 0, len(seen))
+	for _, id := range seen {
+		if id = strings.TrimSpace(id); id != "" {
+			want = append(want, id)
+		}
+	}
+	slices.Sort(want)
+	moved := seen != nil && !slices.Equal(cl.checkedIDs(), slices.Compact(want))
 	if cl.State != "ended" && !moved {
 		last, err = a.poll(ctx, "getActivity", map[string]string{"slug": slug}, nil, timeout, func(b []byte) (bool, error) {
 			cl := parseChecklist(b)

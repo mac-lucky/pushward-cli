@@ -3,7 +3,7 @@
 Every template takes `--text` (the status line), `--subtitle`, `--icon` (SF Symbol or
 `mdi:<name>`), `--color`, `--compact-label` (up to 4 characters for the Dynamic Island's leading
 slot) and `--compact-trailing-icon` or `--compact-trailing-label` for its trailing slot, and all
-but approval take `--url`. The rest differs per template. Every `start` below carries
+but approval and checklist take `--url`. The rest differs per template. Every `start` below carries
 `--ended-ttl` for the reason in SKILL.md: ended activities otherwise count against the
 account's 50 for 30 days. Fields without a flag go in with `-F content.<field>=...`
 (typed) or `-f content.<field>=...` (string). Updates are merge patches: what you leave out keeps
