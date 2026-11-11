@@ -84,6 +84,29 @@ func TestSpecParity(t *testing.T) {
 	}
 }
 
+// TestWidgetFieldsInSpec holds the widget content flags to the properties the
+// spec's WidgetContent has, so a flag cannot send a key the API does not take.
+func TestWidgetFieldsInSpec(t *testing.T) {
+	var spec struct {
+		Components struct {
+			Schemas struct {
+				WidgetContent struct {
+					Properties map[string]any `yaml:"properties"`
+				} `yaml:"WidgetContent"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(loadSpec(t), &spec); err != nil {
+		t.Fatal(err)
+	}
+	props := spec.Components.Schemas.WidgetContent.Properties
+	for _, f := range widgetContentFields {
+		if key := strings.TrimPrefix(f.path, "content."); props[key] == nil {
+			t.Errorf("--%s sets content.%s, which WidgetContent does not have", f.flag, key)
+		}
+	}
+}
+
 func walk(c *cobra.Command, fn func(*cobra.Command)) {
 	fn(c)
 	for _, sub := range c.Commands() {

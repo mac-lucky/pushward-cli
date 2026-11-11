@@ -355,7 +355,8 @@ var notificationBaseFields = []field{
 }
 
 var widgetContentFields = []field{
-	{"template", "content.template", kString, "template: value, progress, status, gauge, stat_list, trend, countdown, battery, schedule, flow"},
+	{"template", "content.template", kString, "template: value, progress, status, gauge, stat_list, trend, countdown, battery, schedule, flow, heatmap"},
+	{"style", "content.style", kString, "look of the widget: refined (the default), rethink, or original (status, battery, flow and heatmap only); overrides the style picked in the app"},
 	{"value", "content.value", kNumber, "numeric value"},
 	{"label", "content.label", kString, "label"},
 	{"unit", "content.unit", kString, "unit label"},

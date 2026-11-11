@@ -478,6 +478,47 @@ func TestWidgetUpdateAlwaysSendsContent(t *testing.T) {
 	}
 }
 
+// A style goes out only when --style is given, so the app's pick applies
+// otherwise, and --no-style clears a stored one with null.
+func TestWidgetStyle(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("POST /widgets", 201, `{"slug":"cpu"}`)
+	f.reply("PATCH /widgets/cpu", 200, `{"slug":"cpu"}`)
+	for _, tc := range []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"widget", "create", "cpu", "--template", "status"}, `{"content":{"template":"status"},"name":"cpu","slug":"cpu"}`},
+		{[]string{"widget", "create", "cpu", "--template", "status", "--style", "original"}, `{"content":{"style":"original","template":"status"},"name":"cpu","slug":"cpu"}`},
+		{[]string{"widget", "update", "cpu", "--value", "3"}, `{"content":{"value":3}}`},
+		{[]string{"widget", "update", "cpu", "--style", "rethink"}, `{"content":{"style":"rethink"}}`},
+		{[]string{"widget", "update", "cpu", "--no-style"}, `{"content":{"style":null}}`},
+	} {
+		n := len(f.calls)
+		if r := runCLI(t, srv, nil, "", tc.argv...); r.code != 0 {
+			t.Fatalf("%v: exit %d: %s", tc.argv, r.code, r.stderr)
+		}
+		if got := mustJSON(t, f.calls[n].Body); got != tc.want {
+			t.Errorf("%v:\n got  %s\n want %s", tc.argv, got, tc.want)
+		}
+	}
+
+	n := len(f.calls)
+	r := runCLI(t, srv, nil, "", "widget", "update", "cpu", "--no-style", "--style", "rethink")
+	if r.code != ExitUsage || !strings.Contains(r.stderr, "--no-style") || len(f.calls) != n {
+		t.Errorf("--no-style with --style: exit %d %q, %d calls", r.code, r.stderr, len(f.calls)-n)
+	}
+
+	// The CLI does not know which template offers which style: the server's
+	// refusal reaches the user as sent.
+	const msg = `style "original" is not available for template "gauge"; allowed: refined, rethink`
+	f.reply("PATCH /widgets/cpu", 422, `{"status":422,"code":"widget.content_invalid","detail":"`+strings.ReplaceAll(msg, `"`, `\"`)+`"}`)
+	r = runCLI(t, srv, nil, "", "widget", "update", "cpu", "--style", "original")
+	if r.code != ExitError || !strings.Contains(r.stderr, "widget.content_invalid: "+msg) {
+		t.Errorf("422: exit %d %q", r.code, r.stderr)
+	}
+}
+
 func TestScheduleCreate(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("POST /notifications/scheduled", 201, `{"id":3,"status":"scheduled","send_at":"2026-09-29T14:00:00Z"}`)

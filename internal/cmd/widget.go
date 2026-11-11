@@ -4,6 +4,8 @@ import (
 	"slices"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mac-lucky/pushward-cli/internal/body"
 )
 
 func newWidgetCmd(a *App) *cobra.Command {
@@ -91,12 +93,13 @@ func newWidgetCreateCmd(a *App) *cobra.Command {
 
 func newWidgetUpdateCmd(a *App) *cobra.Command {
 	var bf bodyFlags
-	var noTarget bool
+	var noTarget, noStyle bool
 	c := &cobra.Command{
 		Use:   "update <slug>",
 		Short: "Update a widget",
 		Long: `Update a widget with a JSON merge patch: content fields you leave out keep
-their stored value, and null clears one.`,
+their stored value, and null clears one. --no-style clears the style, so the
+one picked in the app applies again.`,
 		Args:        checkArgs,
 		Annotations: map[string]string{"operation": "updateWidget"},
 		RunE: func(cmd *cobra.Command, argv []string) error {
@@ -110,6 +113,14 @@ their stored value, and null clears one.`,
 					return usagef("--no-target cannot be used with --target-groups, --target-tags or --target-members")
 				}
 				conv["target"] = nil
+			}
+			if noStyle {
+				if cmd.Flags().Changed("style") {
+					return usagef("--no-style cannot be used with --style")
+				}
+				if err := body.Set(conv, "content.style", nil); err != nil {
+					return err
+				}
 			}
 			b, err := bf.build(a, conv)
 			if err != nil {
@@ -133,6 +144,7 @@ their stored value, and null clears one.`,
 	addFields(c, widgetContentFields)
 	addFields(c, targetFields)
 	c.Flags().BoolVar(&noTarget, "no-target", false, "organization keys: clear the target, so everyone the routing rules allow gets it")
+	c.Flags().BoolVar(&noStyle, "no-style", false, "clear the style, so the one picked in the app applies again")
 	bf.register(c)
 	return c
 }
