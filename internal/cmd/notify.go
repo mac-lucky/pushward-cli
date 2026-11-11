@@ -289,7 +289,7 @@ bursts of up to 5.`,
 // With no wait, a pending answer is a result rather than a timeout.
 func (a *App) waitAnswer(ctx context.Context, id string, wait time.Duration) error {
 	var ans map[string]any
-	last, err := a.poll(ctx, "getNotificationAnswer", map[string]string{"id": id}, nil, wait, func(b []byte) (bool, error) {
+	last, err := a.poll(ctx, "getNotificationAnswer", map[string]string{"id": id}, nil, wait, nil, func(b []byte) (bool, error) {
 		ans = decode(b)
 		return str(ans, "status") == "answered", nil
 	})

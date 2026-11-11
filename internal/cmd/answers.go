@@ -163,7 +163,7 @@ func (a *App) waitAnswers(ctx context.Context, after string, q url.Values, wait 
 		}
 	}
 	q.Set("after", after)
-	last, err := a.poll(ctx, "listNotificationAnswers", nil, q, wait, func(b []byte) (bool, error) {
+	last, err := a.poll(ctx, "listNotificationAnswers", nil, q, wait, nil, func(b []byte) (bool, error) {
 		p, err := decodeAnswerPage(b)
 		return len(p.Items) > 0, err
 	})

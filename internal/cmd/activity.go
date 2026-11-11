@@ -602,7 +602,7 @@ list has moved on from them, so a tick between two waits is not missed.
 			last := first.Body
 			ok, err := done(last)
 			if !ok && err == nil {
-				last, err = a.poll(cmd.Context(), "getActivity", params, nil, timeout, done)
+				last, err = a.poll(cmd.Context(), "getActivity", params, nil, timeout, nil, done)
 			}
 			switch {
 			case err == nil:
@@ -673,7 +673,15 @@ func (a *App) waitChecklist(ctx context.Context, slug string, first []byte, seen
 	slices.Sort(want)
 	moved := seen != nil && !slices.Equal(cl.checkedIDs(), slices.Compact(want))
 	if cl.State != "ended" && !moved {
-		last, err = a.poll(ctx, "getActivity", map[string]string{"slug": slug}, nil, timeout, func(b []byte) (bool, error) {
+		// The server holds a read open only while the list is ongoing: a
+		// preempted one answers every read at once, so read it less often.
+		idle := func(b []byte) time.Duration {
+			if parseChecklist(b).State != "ongoing" {
+				return 15 * time.Second
+			}
+			return 2 * time.Second
+		}
+		last, err = a.poll(ctx, "getActivity", map[string]string{"slug": slug}, nil, timeout, idle, func(b []byte) (bool, error) {
 			cl := parseChecklist(b)
 			if cl.Content.Template != "checklist" {
 				return false, fmt.Errorf("activity %s is template %q, not checklist", slug, cl.Content.Template)

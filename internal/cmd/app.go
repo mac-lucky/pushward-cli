@@ -346,9 +346,10 @@ func (a *App) sleep(ctx context.Context, d time.Duration) error {
 
 // poll long-polls an operation until done accepts a response or wait runs
 // out, and returns the last response. query is sent with every request,
-// next to the ?wait= poll sets. On timeout the error is errWaitTimeout,
-// still with the last response.
-func (a *App) poll(ctx context.Context, opID string, params map[string]string, query url.Values, wait time.Duration, done func(body []byte) (bool, error)) ([]byte, error) {
+// next to the ?wait= poll sets. A response that comes back at once is
+// followed by a pause of idle(body), or 2s when idle is nil. On timeout the
+// error is errWaitTimeout, still with the last response.
+func (a *App) poll(ctx context.Context, opID string, params map[string]string, query url.Values, wait time.Duration, idle func(body []byte) time.Duration, done func(body []byte) (bool, error)) ([]byte, error) {
 	deadline := a.Now().Add(wait)
 	for {
 		left := deadline.Sub(a.Now())
@@ -379,7 +380,11 @@ func (a *App) poll(ctx context.Context, opID string, params map[string]string, q
 		// A long-poll that answers at once (an intermediary dropping the
 		// wait) must not turn this into a tight loop.
 		if a.Now().Sub(polled) < time.Second {
-			if err := a.sleep(ctx, 2*time.Second); err != nil {
+			pause := 2 * time.Second
+			if idle != nil {
+				pause = min(idle(resp.Body), deadline.Sub(a.Now()))
+			}
+			if err := a.sleep(ctx, pause); err != nil {
 				return nil, err
 			}
 		}

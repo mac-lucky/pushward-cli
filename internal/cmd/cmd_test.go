@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -531,6 +532,43 @@ func TestActivityWaitChecklist(t *testing.T) {
 	want := "1/2 checked, ended ID LABEL CHECKED milk Milk true eggs Eggs false"
 	if got := strings.Join(strings.Fields(r.stdout), " "); r.code != 0 || got != want {
 		t.Errorf("exit %d, terminal output %q, want %q", r.code, got, want)
+	}
+}
+
+func TestActivityWaitChecklistPreempted(t *testing.T) {
+	const (
+		preempted = `{"slug":"shop","state":"preempted","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":false}]}}`
+		open      = `{"slug":"shop","state":"ongoing","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":false}]}}`
+		ticked    = `{"slug":"shop","state":"ongoing","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":true}]}}`
+	)
+	// The server answers every read on a preempted list at once. At the 2s
+	// guard an hour would be about 1,800 reads; 15s keeps it near 240.
+	f, srv := newFake(t)
+	f.reply("GET /activities/shop", 200, preempted)
+	r := runCLI(t, srv, nil, "", "activity", "wait", "shop", "--timeout", "1h")
+	if r.code != ExitWaitTimeout {
+		t.Fatalf("exit %d (%s)", r.code, r.stderr)
+	}
+	if n, most := len(f.calls), 2+int(time.Hour/(15*time.Second)); n > most {
+		t.Errorf("%d reads in an hour, want at most %d", n, most)
+	}
+	var slept time.Duration
+	for _, d := range r.sleeps {
+		slept += d
+	}
+	if slept != time.Hour {
+		t.Errorf("slept %v, want the timeout exactly", slept)
+	}
+
+	// Back on screen, it goes back to the long-poll and its 2s guard.
+	replies := []string{preempted, preempted, open, ticked}
+	f, srv = newFake(t)
+	f.routes["GET /activities/shop"] = func(call) (int, string) {
+		return 200, replies[min(len(f.calls), len(replies))-1]
+	}
+	r = runCLI(t, srv, nil, "", "activity", "wait", "shop", "--timeout", "1h")
+	if r.code != 0 || !slices.Equal(r.sleeps, []time.Duration{15 * time.Second, 2 * time.Second}) {
+		t.Errorf("exit %d sleeps %v (%s)", r.code, r.sleeps, r.stderr)
 	}
 }
 
