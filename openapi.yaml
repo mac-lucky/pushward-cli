@@ -16,6 +16,7 @@ components:
               alert: "#/components/schemas/ContentAlert"
               approval: "#/components/schemas/ContentApproval"
               board: "#/components/schemas/ContentBoard"
+              checklist: "#/components/schemas/ContentChecklist"
               countdown: "#/components/schemas/ContentCountdown"
               gauge: "#/components/schemas/ContentGauge"
               generic: "#/components/schemas/ContentGeneric"
@@ -46,6 +47,8 @@ components:
               title: Media
             - $ref: "#/components/schemas/ContentApproval"
               title: Approval
+            - $ref: "#/components/schemas/ContentChecklist"
+              title: Checklist
         created_at:
           description: Timestamp when the activity was created.
           format: date-time
@@ -879,6 +882,130 @@ components:
       required:
         - template
       title: Board
+      type: object
+    ContentChecklist:
+      additionalProperties: true
+      description: "A short list of 1-8 items the user ticks from the Lock Screen, the Dynamic Island, the watch, the Mac or the Android notification. A tap goes to the server (tick_url), which records it in the item's checked, pushes the card to every device and, once every item is checked, ends the activity a few seconds later (unticking first keeps it open; with auto_end: false it stays open until you end it). Read ticks with GET /activities/{slug}; ?wait= returns as soon as an item changes or the activity ends. Your own PATCH can tick too: send checked on an item, or leave it out to keep what the user ticked. progress and state are filled by the server (checked/total and \"3 of 8\"), which is what older app builds show on the generic card."
+      properties:
+        accent_color:
+          description: "Accent color: named color or hex (#RRGGBB / #RRGGBBAA)."
+          type: string
+        auto_end:
+          description: Whether the server ends the activity a few seconds after every item is checked. Defaults to true when omitted. false keeps a complete list ongoing (the card reads "All done") until you end it, or stale_ttl or the usual limits do; switching back to true while every item is checked ends it after the same delay. On updates an omitted key keeps the stored value; null resets it to the default.
+          type: boolean
+        background_color:
+          description: "Background color: named color or hex."
+          type: string
+        compact_label:
+          description: Up to 4 characters shown in the Dynamic Island compact leading ear in place of that template's default (the icon, the steps ring, or the timeline high/low stack). Applies to every template. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
+        compact_trailing_icon:
+          description: "Icon shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). SF Symbol (e.g. airplane.departure) or Material Design Icon with mdi: prefix (e.g. mdi:airplane-takeoff), written with letters, digits, '.', '-', '_' and ':' only. Applies to every template. In the Dynamic Island compact_trailing_label wins when both are set; the Mac notch, which fits one glyph, draws the icon either way. Leading and trailing whitespace is removed server-side, and the 128-character limit and the character rule apply to the trimmed value, so send it trimmed. The minimal presentation ignores it."
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._:-]*$
+          type: string
+        compact_trailing_label:
+          description: Up to 4 characters shown in the Dynamic Island compact trailing ear in place of that template's default (for example the steps count, a live ETA or the countdown clock). Applies to every template. Takes precedence over compact_trailing_icon when both are set. Leading and trailing whitespace is removed server-side and the 4-character limit applies to the trimmed value, so send it trimmed. The minimal presentation ignores it.
+          maxLength: 4
+          type: string
+        icon:
+          description: "Icon name. SF Symbol (e.g. washer, flame) or Material Design Icon with mdi: prefix (e.g. mdi:thermometer)."
+          maxLength: 128
+          type: string
+        items:
+          description: 1-8 items, shown unchecked first. Replaced wholesale on each update (send the full list); checked follows the rule on the item. Required when template is checklist.
+          items:
+            properties:
+              checked:
+                description: "Whether the item is ticked. Optional on write: absent on a new item means false, and absent on an item whose id is already stored keeps the stored value (a user's tick is never undone by a PATCH that leaves it out), except on an update that restarts an ended activity, which starts a new run with every such item unchecked. true or false sets it. Always present in responses."
+                type: boolean
+              id:
+                description: Stable identifier of the item, unique within items. A tick names it, and a PATCH that keeps an id keeps its checked value unless checked is sent.
+                maxLength: 16
+                minLength: 1
+                pattern: ^[A-Za-z0-9_-]{1,16}$
+                type: string
+              label:
+                description: The item's one line of text.
+                maxLength: 40
+                minLength: 1
+                type: string
+            required:
+              - id
+              - label
+            type: object
+          maxItems: 8
+          minItems: 1
+          type: array
+        progress:
+          description: "Server-filled on this template: checked items over all items. A value you send is replaced."
+          maximum: 1
+          minimum: 0
+          type: number
+        remaining_time:
+          description: Remaining time in seconds.
+          minimum: 0
+          type: integer
+        snoozed_until:
+          description: Server-set unix timestamp marking the new end_date after the most recent snooze. Non-nil and >= now means the activity is currently snoozed.
+          readOnly: true
+          type: integer
+        state:
+          description: "Server-filled on this template: the checked count, e.g. 3 of 8. A value you send is replaced."
+          maxLength: 256
+          type: string
+        subtitle:
+          description: Secondary descriptive text (e.g. Layer 150/200, repo / CI/CD).
+          maxLength: 256
+          type: string
+        tap_action:
+          description: Widget-wide tap action. When set, overrides the default behavior (opening the PushWard app to the activity detail page). The whole Live Activity becomes tappable as a single target.
+          properties:
+            body:
+              description: HTTP request body for silent webhook. <=1KB. Ignored for custom-scheme URLs.
+              maxLength: 1024
+              type: string
+            foreground:
+              description: "For http(s) URLs only: true opens the URL in Safari / in-app browser; false fires the request silently without launching the app (silent webhook). Ignored for custom-scheme URLs."
+              type: boolean
+            headers:
+              additionalProperties:
+                type: string
+              description: HTTP headers for silent webhook. Total <=1KB. Ignored for custom-scheme URLs.
+              type: object
+            method:
+              description: HTTP method for silent webhook (foreground=false). Defaults to GET. Ignored for custom-scheme URLs.
+              enum:
+                - GET
+                - POST
+                - PUT
+                - PATCH
+                - DELETE
+                - HEAD
+              type: string
+            url:
+              description: Target URL. Any scheme except javascript/data/file/vbscript. http(s) URLs require a host; custom schemes (e.g. youtube://, homeassistant://) open the matching app.
+              maxLength: 2048
+              type: string
+          required:
+            - url
+          type: object
+        template:
+          description: Template type that determines the Live Activity layout.
+          enum:
+            - checklist
+          type: string
+        text_color:
+          description: "Text color: named color or hex."
+          type: string
+        tick_url:
+          description: "Server-set signed URL a device POSTs a tick to, appending &item=<id>&checked=true|false. Read-only and server-owned: ignored on write. Valid while the activity is an ongoing checklist."
+          readOnly: true
+          type: string
+      required:
+        - template
+      title: Checklist
       type: object
     ContentCountdown:
       additionalProperties: true
@@ -2966,13 +3093,24 @@ components:
           maxLength: 2048
           type: string
         level:
-          description: "Interruption level (default: active)"
-          enum:
-            - passive
-            - active
-            - time-sensitive
-            - critical
-          type: string
+          description: "Interruption level, by name or number: 0 passive, 1 active (default), 2 time-sensitive, 3 critical."
+          oneOf:
+            - enum:
+                - passive
+                - "0"
+                - active
+                - "1"
+                - time-sensitive
+                - "2"
+                - critical
+                - "3"
+              type: string
+            - enum:
+                - 0
+                - 1
+                - 2
+                - 3
+              type: integer
         media:
           $ref: "#/components/schemas/MediaAttachment"
           description: Rich media attachment (image, video, or audio). HTTPS only.
@@ -3192,13 +3330,24 @@ components:
           maxLength: 2048
           type: string
         level:
-          description: "Interruption level (default: active)"
-          enum:
-            - passive
-            - active
-            - time-sensitive
-            - critical
-          type: string
+          description: "Interruption level, by name or number: 0 passive, 1 active (default), 2 time-sensitive, 3 critical."
+          oneOf:
+            - enum:
+                - passive
+                - "0"
+                - active
+                - "1"
+                - time-sensitive
+                - "2"
+                - critical
+                - "3"
+              type: string
+            - enum:
+                - 0
+                - 1
+                - 2
+                - 3
+              type: integer
         media:
           $ref: "#/components/schemas/MediaAttachment"
           description: Rich media attachment (image, video, or audio). HTTPS only.
@@ -5932,7 +6081,7 @@ components:
           readOnly: true
           type: string
         level:
-          description: "Interruption level (default: active)"
+          description: Interruption level.
           enum:
             - passive
             - active
@@ -6201,6 +6350,7 @@ components:
               alert: "#/components/schemas/ContentAlert"
               approval: "#/components/schemas/ContentApproval"
               board: "#/components/schemas/ContentBoard"
+              checklist: "#/components/schemas/ContentChecklist"
               countdown: "#/components/schemas/ContentCountdown"
               gauge: "#/components/schemas/ContentGauge"
               generic: "#/components/schemas/ContentGeneric"
@@ -6231,6 +6381,8 @@ components:
               title: Media
             - $ref: "#/components/schemas/ContentApproval"
               title: Approval
+            - $ref: "#/components/schemas/ContentChecklist"
+              title: Checklist
         dismissal_ttl:
           description: "Seconds after ENDED before Lock Screen removal (0 = immediate, max 4h). Tri-state: omit to keep, null to clear, number to set."
           format: int64
@@ -6637,6 +6789,18 @@ components:
           type: string
         background_color:
           type: string
+        cells:
+          description: "Heatmap template: one value per day, oldest first, 7 to 154 cells (22 weeks). The last cell is the day of end_date when set, else the day of updated_at. null is a day with no data; at least one cell must be a number. Clients band each cell into levels 0-4: null = no data; v <= min is level 0; otherwise level = min(4, ceil((v - min) / (max - min) * 4)), where min is min_value (default 0) and max is max_value (default the largest non-null cell); when max <= min every non-null cell above min is level 4."
+          items:
+            format: double
+            type:
+              - number
+              - "null"
+          maxItems: 154
+          minItems: 7
+          type:
+            - array
+            - "null"
         device_sort:
           description: Reorders devices on write for the battery template, so the prefix each widget family renders (2 on small, 4 on medium, 8 on large) holds the devices that matter. Keys apply in order; the first that separates two devices wins, so a second key is a tie-break. The stored order changes, so this response and later GETs return the sorted array; devices no key separates keep the order you sent. Omit to keep the order as sent. Ignored for other templates.
           items:
@@ -6704,6 +6868,9 @@ components:
           type:
             - array
             - "null"
+        style:
+          description: "The look the template is drawn in: refined, rethink or original. Every template offers refined and rethink; original (the design from before the redesign) only status, battery, flow and heatmap. Any other value, or one the template does not offer, is a 422 widget.content_invalid naming the template's styles; case is ignored. Precedence on the devices: a style set here wins over the user's in-app pick for this widget; without one the in-app pick applies, and without that the widget is refined. Omit it to leave the choice to the user: a widget created without it reads back without the key, not as refined. On PATCH, null (or an empty string) clears it and hands the choice back, and a field left out keeps the stored style. POST is an upsert that replaces the whole content, so a re-POST without style clears it; resend the style to keep it. A PATCH that moves the widget to a template that does not offer its stored style is refused unless the same PATCH changes or clears the style."
+          type: string
         subtitle:
           maxLength: 256
           type: string
@@ -6724,6 +6891,7 @@ components:
             - battery
             - schedule
             - flow
+            - heatmap
           examples:
             - progress
           type: string
@@ -7386,12 +7554,12 @@ paths:
           schema:
             description: Comma-separated extras to include in the response. Currently supports 'log_backlog' - the server-accumulated rolling log history for the log template (newest-first, up to 1000 lines / ~300 KiB). Omitted by default.
             type: string
-        - description: Seconds (up to 25) to hold the request open while an approval activity is waiting for its answer (long-poll). Returns as soon as it is answered or ends, or unchanged when the time runs out. Ignored for any other activity.
+        - description: Seconds (up to 25) to hold the request open while an approval activity is waiting for its answer, or while a checklist is open (long-poll). Returns as soon as the approval is answered, a checklist item changes, or the activity ends, or unchanged when the time runs out. Ignored for any other activity.
           explode: false
           in: query
           name: wait
           schema:
-            description: Seconds (up to 25) to hold the request open while an approval activity is waiting for its answer (long-poll). Returns as soon as it is answered or ends, or unchanged when the time runs out. Ignored for any other activity.
+            description: Seconds (up to 25) to hold the request open while an approval activity is waiting for its answer, or while a checklist is open (long-poll). Returns as soon as the approval is answered, a checklist item changes, or the activity ends, or unchanged when the time runs out. Ignored for any other activity.
             format: int64
             type: integer
       responses:
@@ -21947,7 +22115,7 @@ paths:
                     detail: validation failed
                     errors:
                       - location: body.template
-                        message: expected value to be one of "value", "progress", "status", "gauge", "stat_list", "trend", "countdown", "battery", "schedule", "flow"
+                        message: expected value to be one of "value", "progress", "status", "gauge", "stat_list", "trend", "countdown", "battery", "schedule", "flow", "heatmap"
                     instance: /requests/9f86d081884c7d65
                     status: 422
                     title: Unprocessable Entity
