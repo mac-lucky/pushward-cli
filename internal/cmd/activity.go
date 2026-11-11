@@ -546,6 +546,7 @@ func sameJSON(a, b any) bool {
 
 func newActivityWaitCmd(a *App) *cobra.Command {
 	var timeout time.Duration
+	var seen []string
 	c := &cobra.Command{
 		Use:   "wait <slug>",
 		Short: "Wait for the answer to an approval activity or a tick on a checklist",
@@ -558,11 +559,13 @@ Exits 7 on timeout.
   pushward activity wait release --timeout 30m --jq .content.answer.option
 
 On a checklist it waits until an item is ticked or unticked, the activity
-ends, or --timeout passes, and prints the activity with content.items. A
-checklist that has ended or has every item checked returns at once. Exits 7
-on timeout.
+ends, or --timeout passes, and prints the activity with content.items. An
+ended checklist returns at once. Exits 7 on timeout. --checked takes the ids
+you last saw checked (--checked '' for none) and returns at once when the
+list has moved on from them, so a tick between two waits is not missed.
 
-  pushward activity wait groceries --timeout 1h --jq '.content.items[] | select(.checked) | .id'`,
+  pushward activity wait groceries --timeout 1h --checked milk,eggs \
+    --jq '[.content.items[] | select(.checked) | .id] | join(",")'`,
 		Args: checkArgs,
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
@@ -575,13 +578,16 @@ on timeout.
 			}
 			switch tmpl := str(decode(first.Body), "content", "template"); tmpl {
 			case "checklist":
-				return a.waitChecklist(cmd.Context(), slug, first.Body, timeout)
+				return a.waitChecklist(cmd.Context(), slug, first.Body, seen, timeout)
 			case "approval":
+				if seen != nil {
+					return usagef("--checked only applies to a checklist")
+				}
 			default:
 				return fmt.Errorf("activity %s is template %q, not approval or checklist", slug, tmpl)
 			}
 			var option string
-			last, err := a.poll(cmd.Context(), "getActivity", params, nil, timeout, func(b []byte) (bool, error) {
+			done := func(b []byte) (bool, error) {
 				act := decode(b)
 				if tmpl := str(act, "content", "template"); tmpl != "approval" {
 					return false, fmt.Errorf("activity %s is template %q, not approval", slug, tmpl)
@@ -591,7 +597,12 @@ on timeout.
 					return false, errors.New("the activity ended with no recorded answer")
 				}
 				return option != "", nil
-			})
+			}
+			last := first.Body
+			ok, err := done(last)
+			if !ok && err == nil {
+				last, err = a.poll(cmd.Context(), "getActivity", params, nil, timeout, done)
+			}
 			switch {
 			case err == nil:
 				return a.out().Printf(last, "answered: %s", option)
@@ -602,6 +613,7 @@ on timeout.
 		},
 	}
 	c.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "give up after this long")
+	c.Flags().StringSliceVar(&seen, "checked", nil, "checklist: ids you last saw checked, comma-separated; returns at once if that differs")
 	return c
 }
 
@@ -626,36 +638,44 @@ func parseChecklist(b []byte) checklist {
 }
 
 func (cl checklist) checked() int {
-	n := 0
-	for _, it := range cl.Content.Items {
-		if it.Checked {
-			n++
-		}
-	}
-	return n
+	return len(cl.checkedIDs())
 }
 
-// waitChecklist returns once the items differ from first, the activity ends
-// or every item is checked; a checklist already ended or done returns at once.
-func (a *App) waitChecklist(ctx context.Context, slug string, first []byte, timeout time.Duration) error {
-	base := parseChecklist(first).Content.Items
-	done := func(b []byte) (bool, error) {
-		cl := parseChecklist(b)
-		if cl.Content.Template != "checklist" {
-			return false, fmt.Errorf("activity %s is template %q, not checklist", slug, cl.Content.Template)
+// checkedIDs returns the ids of the checked items, sorted.
+func (cl checklist) checkedIDs() []string {
+	var ids []string
+	for _, it := range cl.Content.Items {
+		if it.Checked {
+			ids = append(ids, it.ID)
 		}
-		all := len(cl.Content.Items) > 0 && cl.checked() == len(cl.Content.Items)
-		return cl.State == "ended" || all || !slices.Equal(cl.Content.Items, base), nil
 	}
+	slices.Sort(ids)
+	return ids
+}
+
+// waitChecklist returns once the items differ from first or the activity
+// ends. An ended checklist returns at once, and so does one whose checked
+// ids differ from seen (nil when the caller passed no --checked). A fully
+// checked list waits too: the server ends it a few seconds later.
+func (a *App) waitChecklist(ctx context.Context, slug string, first []byte, seen []string, timeout time.Duration) error {
+	cl := parseChecklist(first)
+	base := cl.Content.Items
 	last := first
-	ok, err := done(first)
-	if !ok && err == nil {
-		last, err = a.poll(ctx, "getActivity", map[string]string{"slug": slug}, nil, timeout, done)
+	var err error
+	moved := seen != nil && !slices.Equal(cl.checkedIDs(), slices.Compact(slices.Sorted(slices.Values(seen))))
+	if cl.State != "ended" && !moved {
+		last, err = a.poll(ctx, "getActivity", map[string]string{"slug": slug}, nil, timeout, func(b []byte) (bool, error) {
+			cl := parseChecklist(b)
+			if cl.Content.Template != "checklist" {
+				return false, fmt.Errorf("activity %s is template %q, not checklist", slug, cl.Content.Template)
+			}
+			return cl.State == "ended" || !slices.Equal(cl.Content.Items, base), nil
+		})
 	}
 	if last == nil {
 		return err
 	}
-	cl := parseChecklist(last)
+	cl = parseChecklist(last)
 	perr := a.out().Print(last, func(w io.Writer) error {
 		status := fmt.Sprintf("%d/%d checked", cl.checked(), len(cl.Content.Items))
 		if cl.State == "ended" {

@@ -451,6 +451,16 @@ func TestActivityWait(t *testing.T) {
 		t.Errorf("exit %d out %q err %q", r.code, r.stdout, r.stderr)
 	}
 
+	// Already answered: the first read settles it, no long-poll follows.
+	before := len(f.calls)
+	r = runCLI(t, srv, nil, "", "activity", "wait", "rel", "--jq", ".content.answer.option")
+	if r.code != 0 || strings.TrimSpace(r.stdout) != "ship" || len(f.calls) != before+1 {
+		t.Errorf("answered: exit %d out %q after %d calls", r.code, r.stdout, len(f.calls)-before)
+	}
+	if r := runCLI(t, srv, nil, "", "activity", "wait", "rel", "--checked", "x"); r.code != ExitUsage {
+		t.Errorf("--checked on approval: exit %d (%s)", r.code, r.stderr)
+	}
+
 	f.reply("GET /activities/rel", 200, `{"slug":"rel","state":"ongoing","content":{"template":"approval"}}`)
 	if r := runCLI(t, srv, nil, "", "activity", "wait", "rel", "--timeout", "1m"); r.code != ExitWaitTimeout {
 		t.Errorf("unanswered: exit %d (%s)", r.code, r.stderr)
@@ -461,7 +471,7 @@ func TestActivityWait(t *testing.T) {
 	}
 
 	f.reply("GET /activities/rel", 200, `{"slug":"rel","state":"ongoing","content":{"template":"generic"}}`)
-	before := len(f.calls)
+	before = len(f.calls)
 	r = runCLI(t, srv, nil, "", "activity", "wait", "rel")
 	if r.code != ExitError || !strings.Contains(r.stderr, `activity rel is template "generic", not approval or checklist`) || len(f.calls) != before+1 {
 		t.Errorf("generic: exit %d after %d calls (%s)", r.code, len(f.calls)-before, r.stderr)
@@ -475,19 +485,24 @@ func TestActivityWaitChecklist(t *testing.T) {
 		ended   = `{"slug":"shop","state":"ended","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":false},{"id":"eggs","label":"Eggs","checked":false}]}}`
 		allDone = `{"slug":"shop","state":"ongoing","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":true},{"id":"eggs","label":"Eggs","checked":true}]}}`
 	)
-	jq := `[.content.items[] | select(.checked) | .id] | join(",")`
+	endedDone := strings.Replace(allDone, "ongoing", "ended", 1)
+	jq := `.state + ":" + ([.content.items[] | select(.checked) | .id] | join(","))`
 	for _, tc := range []struct {
 		name    string
+		args    []string
 		replies []string // the last one repeats
 		code    int
 		calls   int
 		out     string
 	}{
-		{"tick", []string{open, open, ticked}, 0, 3, "milk"},
-		{"ended", []string{open, ended}, 0, 2, ""},
-		{"timed out", []string{open}, ExitWaitTimeout, 0, ""},
-		{"already done", []string{allDone}, 0, 1, "milk,eggs"},
-		{"already ended", []string{ended}, 0, 1, ""},
+		{"tick", nil, []string{open, open, ticked}, 0, 3, "ongoing:milk"},
+		{"ended", nil, []string{open, ended}, 0, 2, "ended:"},
+		{"timed out", nil, []string{open}, ExitWaitTimeout, 0, "ongoing:"},
+		{"all checked waits for the end", nil, []string{allDone, allDone, endedDone}, 0, 3, "ended:milk,eggs"},
+		{"already ended", nil, []string{ended}, 0, 1, "ended:"},
+		{"ticked since last seen", []string{"--checked", "milk"}, []string{allDone}, 0, 1, "ongoing:milk,eggs"},
+		{"none seen", []string{"--checked", ""}, []string{ticked}, 0, 1, "ongoing:milk"},
+		{"as last seen", []string{"--checked", "eggs,milk"}, []string{allDone, endedDone}, 0, 2, "ended:milk,eggs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f, srv := newFake(t)
@@ -495,7 +510,7 @@ func TestActivityWaitChecklist(t *testing.T) {
 				n := min(len(f.calls), len(tc.replies)) - 1
 				return 200, tc.replies[n]
 			}
-			r := runCLI(t, srv, nil, "", "activity", "wait", "shop", "--timeout", "1m", "--jq", jq)
+			r := runCLI(t, srv, nil, "", append([]string{"activity", "wait", "shop", "--timeout", "1m", "--jq", jq}, tc.args...)...)
 			if r.code != tc.code || strings.TrimSpace(r.stdout) != tc.out {
 				t.Errorf("exit %d out %q err %q", r.code, r.stdout, r.stderr)
 			}

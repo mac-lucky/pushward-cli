@@ -155,9 +155,11 @@ never undoes what the user did; `"checked": true` ticks one from your side. Leav
 template.
 
 `activity wait` returns as soon as an item is ticked or unticked, or the card ends, and prints
-the activity; run it again for the next tick until `state` is `ended`. It exits 7 when nothing
-changed during the wait. Once every item is checked the server ends the card a few seconds
-later, so a wait on a finished list returns at once. Waiting on a checklist needs CLI 1.13.0.
+the activity. Run it again for the next tick until `state` is `ended`, and pass the ids the
+last run printed as checked (`--checked notes,tag`, or `--checked ''` for none): a tick that
+landed while you were busy then returns at once instead of sitting out the whole `--timeout`.
+Exit 7 means nothing changed during the wait. Once every item is checked the server ends the
+card a few seconds later and the wait returns then. Waiting on a checklist needs CLI 1.13.0.
 
 ## media: a now-playing card
 
