@@ -315,7 +315,7 @@ func buttons(flag string, vals []string) ([]any, error) {
 }
 
 var activityContentFields = []field{
-	{"template", "content.template", kString, "template: generic, timer (also accepted as countdown), steps, alert, gauge, timeline, board, log, media, approval"},
+	{"template", "content.template", kString, "template: generic, timer (also accepted as countdown), steps, alert, gauge, timeline, board, log, media, approval, checklist"},
 	{"text", "content.state", kString, "status text on the card (content.state)"},
 	{"subtitle", "content.subtitle", kString, "secondary line"},
 	{"progress", "content.progress", kNumber, "progress from 0 to 1"},

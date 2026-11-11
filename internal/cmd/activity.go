@@ -3,9 +3,11 @@ package cmd
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/mac-lucky/pushward-cli/internal/api"
 	"github.com/mac-lucky/pushward-cli/internal/body"
+	"github.com/mac-lucky/pushward-cli/internal/output"
 )
 
 func newActivityCmd(a *App) *cobra.Command {
@@ -152,7 +155,7 @@ func newActivityGetCmd(a *App) *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&include, "include", "", "extras to include: log_backlog")
-	c.Flags().DurationVar(&wait, "wait", 0, "approval template: hold the request up to this long (max 25s) for an answer")
+	c.Flags().DurationVar(&wait, "wait", 0, "approval or checklist template: hold the request up to this long (max 25s) for an answer or a tick")
 	return c
 }
 
@@ -545,19 +548,40 @@ func newActivityWaitCmd(a *App) *cobra.Command {
 	var timeout time.Duration
 	c := &cobra.Command{
 		Use:   "wait <slug>",
-		Short: "Wait for the answer to an approval activity",
+		Short: "Wait for the answer to an approval activity or a tick on a checklist",
 		Long: `Wait until someone answers an approval activity, it ends, or --timeout
 passes. Prints the activity; the chosen option is content.answer.option.
 Exits 7 on timeout.
 
   pushward activity start release --template approval --text "Ship 2.4?" \
     --option ship=Ship --option hold=Hold
-  pushward activity wait release --timeout 30m --jq .content.answer.option`,
+  pushward activity wait release --timeout 30m --jq .content.answer.option
+
+On a checklist it waits until an item is ticked or unticked, the activity
+ends, or --timeout passes, and prints the activity with content.items. A
+checklist that has ended or has every item checked returns at once. Exits 7
+on timeout.
+
+  pushward activity wait groceries --timeout 1h --jq '.content.items[] | select(.checked) | .id'`,
 		Args: checkArgs,
 		RunE: func(cmd *cobra.Command, argv []string) error {
 			slug := argv[0]
+			params := map[string]string{"slug": slug}
+			// A plain read first: a checklist needs the items as they are now
+			// to tell a tick from a long-poll that ran out.
+			first, err := a.call(cmd.Context(), "getActivity", params, nil, nil)
+			if err != nil {
+				return err
+			}
+			switch tmpl := str(decode(first.Body), "content", "template"); tmpl {
+			case "checklist":
+				return a.waitChecklist(cmd.Context(), slug, first.Body, timeout)
+			case "approval":
+			default:
+				return fmt.Errorf("activity %s is template %q, not approval or checklist", slug, tmpl)
+			}
 			var option string
-			last, err := a.poll(cmd.Context(), "getActivity", map[string]string{"slug": slug}, nil, timeout, func(b []byte) (bool, error) {
+			last, err := a.poll(cmd.Context(), "getActivity", params, nil, timeout, func(b []byte) (bool, error) {
 				act := decode(b)
 				if tmpl := str(act, "content", "template"); tmpl != "approval" {
 					return false, fmt.Errorf("activity %s is template %q, not approval", slug, tmpl)
@@ -579,4 +603,70 @@ Exits 7 on timeout.
 	}
 	c.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "give up after this long")
 	return c
+}
+
+type checkItem struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Checked bool   `json:"checked"`
+}
+
+type checklist struct {
+	State   string `json:"state"`
+	Content struct {
+		Template string      `json:"template"`
+		Items    []checkItem `json:"items"`
+	} `json:"content"`
+}
+
+func parseChecklist(b []byte) checklist {
+	var cl checklist
+	_ = json.Unmarshal(b, &cl)
+	return cl
+}
+
+func (cl checklist) checked() int {
+	n := 0
+	for _, it := range cl.Content.Items {
+		if it.Checked {
+			n++
+		}
+	}
+	return n
+}
+
+// waitChecklist returns once the items differ from first, the activity ends
+// or every item is checked; a checklist already ended or done returns at once.
+func (a *App) waitChecklist(ctx context.Context, slug string, first []byte, timeout time.Duration) error {
+	base := parseChecklist(first).Content.Items
+	done := func(b []byte) (bool, error) {
+		cl := parseChecklist(b)
+		if cl.Content.Template != "checklist" {
+			return false, fmt.Errorf("activity %s is template %q, not checklist", slug, cl.Content.Template)
+		}
+		all := len(cl.Content.Items) > 0 && cl.checked() == len(cl.Content.Items)
+		return cl.State == "ended" || all || !slices.Equal(cl.Content.Items, base), nil
+	}
+	last := first
+	ok, err := done(first)
+	if !ok && err == nil {
+		last, err = a.poll(ctx, "getActivity", map[string]string{"slug": slug}, nil, timeout, done)
+	}
+	if last == nil {
+		return err
+	}
+	cl := parseChecklist(last)
+	perr := a.out().Print(last, func(w io.Writer) error {
+		status := fmt.Sprintf("%d/%d checked", cl.checked(), len(cl.Content.Items))
+		if cl.State == "ended" {
+			status += ", ended"
+		}
+		rows := make([][]string, 0, len(cl.Content.Items))
+		for _, it := range cl.Content.Items {
+			rows = append(rows, []string{it.ID, it.Label, strconv.FormatBool(it.Checked)})
+		}
+		fmt.Fprintln(w, status)
+		return output.Table(w, []string{"ID", "LABEL", "CHECKED"}, rows)
+	})
+	return cmp.Or(err, perr)
 }

@@ -43,6 +43,27 @@ func TestApplyFieldPaths(t *testing.T) {
 	}
 }
 
+// Checklist items and heatmap cells: an array of objects, and an array whose
+// nulls must survive as JSON null, whole or one element at a time.
+func TestApplyFieldArrays(t *testing.T) {
+	obj := map[string]any{}
+	for _, f := range []string{
+		`content.items=[{"id":"milk","label":"Milk"},{"id":"eggs","label":"Eggs","checked":true}]`,
+		"content.cells=[3,null,0,1.5]",
+		"widget.cells[]=null",
+		"widget.cells[]=2",
+	} {
+		if err := ApplyField(obj, f, true, nil); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+	}
+	got := mustJSON(t, obj)
+	want := `{"content":{"cells":[3,null,0,1.5],"items":[{"id":"milk","label":"Milk"},{"checked":true,"id":"eggs","label":"Eggs"}]},"widget":{"cells":[null,2]}}`
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
 func TestStringFieldIsNeverTyped(t *testing.T) {
 	obj := map[string]any{}
 	for _, f := range []string{"a=true", "b=12", "c={}", "d=@nope"} {

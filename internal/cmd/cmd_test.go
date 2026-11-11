@@ -450,6 +450,82 @@ func TestActivityWait(t *testing.T) {
 	if r.code != 0 || strings.TrimSpace(r.stdout) != "ship" {
 		t.Errorf("exit %d out %q err %q", r.code, r.stdout, r.stderr)
 	}
+
+	f.reply("GET /activities/rel", 200, `{"slug":"rel","state":"ongoing","content":{"template":"approval"}}`)
+	if r := runCLI(t, srv, nil, "", "activity", "wait", "rel", "--timeout", "1m"); r.code != ExitWaitTimeout {
+		t.Errorf("unanswered: exit %d (%s)", r.code, r.stderr)
+	}
+	f.reply("GET /activities/rel", 200, `{"slug":"rel","state":"ended","content":{"template":"approval"}}`)
+	if r := runCLI(t, srv, nil, "", "activity", "wait", "rel"); r.code != ExitError || !strings.Contains(r.stderr, "no recorded answer") {
+		t.Errorf("ended unanswered: exit %d (%s)", r.code, r.stderr)
+	}
+
+	f.reply("GET /activities/rel", 200, `{"slug":"rel","state":"ongoing","content":{"template":"generic"}}`)
+	before := len(f.calls)
+	r = runCLI(t, srv, nil, "", "activity", "wait", "rel")
+	if r.code != ExitError || !strings.Contains(r.stderr, `activity rel is template "generic", not approval or checklist`) || len(f.calls) != before+1 {
+		t.Errorf("generic: exit %d after %d calls (%s)", r.code, len(f.calls)-before, r.stderr)
+	}
+}
+
+func TestActivityWaitChecklist(t *testing.T) {
+	const (
+		open    = `{"slug":"shop","state":"ongoing","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":false},{"id":"eggs","label":"Eggs"}]}}`
+		ticked  = `{"slug":"shop","state":"ongoing","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":true},{"id":"eggs","label":"Eggs","checked":false}]}}`
+		ended   = `{"slug":"shop","state":"ended","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":false},{"id":"eggs","label":"Eggs","checked":false}]}}`
+		allDone = `{"slug":"shop","state":"ongoing","content":{"template":"checklist","items":[{"id":"milk","label":"Milk","checked":true},{"id":"eggs","label":"Eggs","checked":true}]}}`
+	)
+	jq := `[.content.items[] | select(.checked) | .id] | join(",")`
+	for _, tc := range []struct {
+		name    string
+		replies []string // the last one repeats
+		code    int
+		calls   int
+		out     string
+	}{
+		{"tick", []string{open, open, ticked}, 0, 3, "milk"},
+		{"ended", []string{open, ended}, 0, 2, ""},
+		{"timed out", []string{open}, ExitWaitTimeout, 0, ""},
+		{"already done", []string{allDone}, 0, 1, "milk,eggs"},
+		{"already ended", []string{ended}, 0, 1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, srv := newFake(t)
+			f.routes["GET /activities/shop"] = func(call) (int, string) {
+				n := min(len(f.calls), len(tc.replies)) - 1
+				return 200, tc.replies[n]
+			}
+			r := runCLI(t, srv, nil, "", "activity", "wait", "shop", "--timeout", "1m", "--jq", jq)
+			if r.code != tc.code || strings.TrimSpace(r.stdout) != tc.out {
+				t.Errorf("exit %d out %q err %q", r.code, r.stdout, r.stderr)
+			}
+			if tc.calls > 0 && len(f.calls) != tc.calls {
+				t.Errorf("%d calls, want %d", len(f.calls), tc.calls)
+			}
+			// The first read takes the items as they are; only the polls after it wait.
+			if f.calls[0].Query != "" || len(f.calls) > 1 && f.calls[1].Query != "wait=25" {
+				t.Errorf("queries %q, %q", f.calls[0].Query, f.calls[min(1, len(f.calls)-1)].Query)
+			}
+		})
+	}
+
+	f, srv := newFake(t)
+	f.reply("GET /activities/shop", 200, strings.Replace(ended, "false", "true", 1))
+	r := runWith(t, srv, func(a *App) { a.StdoutTTY = true }, "activity", "wait", "shop")
+	want := "1/2 checked, ended ID LABEL CHECKED milk Milk true eggs Eggs false"
+	if got := strings.Join(strings.Fields(r.stdout), " "); r.code != 0 || got != want {
+		t.Errorf("exit %d, terminal output %q, want %q", r.code, got, want)
+	}
+}
+
+func TestTemplateHelp(t *testing.T) {
+	_, srv := newFake(t)
+	for argv, want := range map[[2]string]string{{"activity", "update"}: "checklist", {"widget", "update"}: "heatmap"} {
+		r := runCLI(t, srv, nil, "", argv[0], argv[1], "--help")
+		if r.code != 0 || !strings.Contains(r.stdout, want) {
+			t.Errorf("%v --help: exit %d, no %s in %q", argv, r.code, want, r.stdout)
+		}
+	}
 }
 
 func TestActivityListAll(t *testing.T) {
