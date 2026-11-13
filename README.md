@@ -154,7 +154,7 @@ pushward schedule cancel 1234 --purge
 pushward email send --to ops@example.com --subject "Nightly report" --text-file report.txt
 ```
 
-`--style` picks how a widget looks: `refined`, `rethink`, or `original`, the earlier design, which only status, battery, flow and heatmap keep. Leave it out and whoever has the widget picks the style in the app (refined until they do). A style you send wins over that pick, and `widget update --no-style` hands the choice back. `widget create` replaces the whole widget, so running it again without `--style` drops the style too. A style the template doesn't have is refused with a 422 that lists the ones it does.
+`--style` picks how a widget looks: `refined`, `rethink`, or `original`, the earlier design, which only status, stat_list, battery, flow and heatmap keep. Leave it out and whoever has the widget picks the style in the app (refined until they do). A style you send wins over that pick, and `widget update --no-style` hands the choice back. `widget create` replaces the whole widget, so running it again without `--style` drops the style too. A style the template doesn't have is refused with a 422 that lists the ones it does.
 
 Email only goes to recipients you have verified in the app.
 
