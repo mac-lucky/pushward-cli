@@ -144,7 +144,8 @@ pushward activity update soak --paused true
 ```sh
 pushward widget create cpu --template gauge --min 0 --max 100 --unit % --value 12
 pushward widget update cpu --value 57
-pushward widget update cpu --style rethink
+pushward widget update cpu --style bold --style-for lock_screen=classic
+pushward widget update rooms --density compact --density-for large=comfortable
 
 pushward schedule create --in 2h --title "Stand up" --body Stretch
 pushward schedule create --cron "0 9 * * 1-5" --tz Europe/Warsaw --title Standup --body "In 5 minutes"
@@ -154,7 +155,9 @@ pushward schedule cancel 1234 --purge
 pushward email send --to ops@example.com --subject "Nightly report" --text-file report.txt
 ```
 
-`--style` picks how a widget looks: `refined`, `rethink`, or `original`, the earlier design, which only status, stat_list, battery, flow and heatmap keep. Leave it out and whoever has the widget picks the style in the app (refined until they do). A style you send wins over that pick, and `widget update --no-style` hands the choice back. `widget create` replaces the whole widget, so running it again without `--style` drops the style too. A style the template doesn't have is refused with a 422 that lists the ones it does.
+`--style` picks how a widget looks: `standard`, `bold` or `classic`, on any template. Leave it out and whoever has the widget picks the look in the app (standard until they do); a look you send wins over that pick. `--style-for size=look` sets one size and beats `--style` there. The sizes are `small`, `medium`, `large` and `lock_screen`, which covers every Lock Screen size (Android has none). A stat_list widget also takes a row density: `--density auto|compact|comfortable`, and `--density-for size=density` per size. Other templates refuse density with a 422.
+
+On `widget update`, `--style-for` and `--density-for` replace all the sizes stored before, so repeat the flag for each size you want to keep. `--no-style`, `--no-style-for`, `--no-density` and `--no-density-for` hand the choice back to the app. Moving a stat_list widget to another template while it has a density stored needs `--no-density` (and `--no-density-for`) in the same update. `widget create` replaces the whole widget, so running it again without these flags drops them. An unknown look, size or density gets a 422 that lists the allowed ones.
 
 Email only goes to recipients you have verified in the app.
 

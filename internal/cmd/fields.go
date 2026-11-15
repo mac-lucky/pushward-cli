@@ -41,10 +41,15 @@ const (
 	kStep        // 2 -> current_step, 2/5 -> current_step and total_steps
 	kBool        // true or false, given as a value: --paused false must not read as a positional
 	kMinutes     // 15m,1h or 15,60 -> [15, 60]: whole minutes, a plain number is minutes
+	kPairs       // repeatable key=value -> {"key": "value"}, a repeated key keeps the last value
 )
 
 func addFields(cmd *cobra.Command, fields []field) {
 	for _, f := range fields {
+		if f.kind == kPairs {
+			cmd.Flags().StringArray(f.flag, nil, f.usage)
+			continue
+		}
 		cmd.Flags().String(f.flag, "", f.usage)
 	}
 }
@@ -54,6 +59,17 @@ func collectFields(cmd *cobra.Command, fields []field, now time.Time) (map[strin
 	obj := map[string]any{}
 	for _, f := range fields {
 		if !cmd.Flags().Changed(f.flag) {
+			continue
+		}
+		if f.kind == kPairs {
+			vals, _ := cmd.Flags().GetStringArray(f.flag)
+			m, err := pairMap(f.flag, vals)
+			if err != nil {
+				return nil, err
+			}
+			if err := body.Set(obj, f.path, m); err != nil {
+				return nil, usagef("--%s: %v", f.flag, err)
+			}
 			continue
 		}
 		raw, _ := cmd.Flags().GetString(f.flag)
@@ -271,6 +287,19 @@ func pairs(flag string, vals []string) ([][2]string, error) {
 	return out, nil
 }
 
+// pairMap turns repeated key=value flags into one object.
+func pairMap(flag string, vals []string) (map[string]any, error) {
+	ps, err := pairs(flag, vals)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]any, len(ps))
+	for _, p := range ps {
+		m[p[0]] = p[1]
+	}
+	return m, nil
+}
+
 // buttons turns repeated id=Title flags into the [{id, title}] list that
 // notification actions and approval options share.
 func buttons(flag string, vals []string) ([]any, error) {
@@ -356,7 +385,10 @@ var notificationBaseFields = []field{
 
 var widgetContentFields = []field{
 	{"template", "content.template", kString, "template: value, progress, status, gauge, stat_list, trend, countdown, battery, schedule, flow, heatmap"},
-	{"style", "content.style", kString, "look of the widget: refined (the default), rethink, or original (status, stat_list, battery, flow and heatmap only); overrides the style picked in the app"},
+	{"style", "content.style", kString, "look of the widget: standard (the default), bold or classic; overrides the look picked in the app"},
+	{"style-for", "content.style_by_size", kPairs, "look for one size as size=look (repeatable): small, medium, large or lock_screen, set to standard, bold or classic; wins over --style there"},
+	{"density", "content.density", kString, "stat_list row density: auto (the default), compact or comfortable; overrides the one picked in the app"},
+	{"density-for", "content.density_by_size", kPairs, "stat_list row density for one size as size=density (repeatable), sizes as in --style-for; wins over --density there"},
 	{"value", "content.value", kNumber, "numeric value"},
 	{"label", "content.label", kString, "label"},
 	{"unit", "content.unit", kString, "unit label"},

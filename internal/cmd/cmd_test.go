@@ -478,8 +478,8 @@ func TestWidgetUpdateAlwaysSendsContent(t *testing.T) {
 	}
 }
 
-// A style goes out only when --style is given, so the app's pick applies
-// otherwise, and --no-style clears a stored one with null.
+// Look settings go out only when their flag is given, so the app's pick
+// applies otherwise, and the --no-* flags clear a stored one with null.
 func TestWidgetStyle(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("POST /widgets", 201, `{"slug":"cpu"}`)
@@ -489,10 +489,20 @@ func TestWidgetStyle(t *testing.T) {
 		want string
 	}{
 		{[]string{"widget", "create", "cpu", "--template", "status"}, `{"content":{"template":"status"},"name":"cpu","slug":"cpu"}`},
-		{[]string{"widget", "create", "cpu", "--template", "status", "--style", "original"}, `{"content":{"style":"original","template":"status"},"name":"cpu","slug":"cpu"}`},
+		{[]string{"widget", "create", "cpu", "--template", "gauge", "--style", "classic"}, `{"content":{"style":"classic","template":"gauge"},"name":"cpu","slug":"cpu"}`},
+		{
+			[]string{"widget", "create", "cpu", "--template", "stat_list", "--style", "bold", "--style-for", "large=standard", "--style-for", "lock_screen=classic", "--density", "comfortable", "--density-for", "small=compact"},
+			`{"content":{"density":"comfortable","density_by_size":{"small":"compact"},"style":"bold","style_by_size":{"large":"standard","lock_screen":"classic"},"template":"stat_list"},"name":"cpu","slug":"cpu"}`,
+		},
 		{[]string{"widget", "update", "cpu", "--value", "3"}, `{"content":{"value":3}}`},
-		{[]string{"widget", "update", "cpu", "--style", "rethink"}, `{"content":{"style":"rethink"}}`},
+		{[]string{"widget", "update", "cpu", "--style", "bold"}, `{"content":{"style":"bold"}}`},
+		{[]string{"widget", "update", "cpu", "--style-for", "small=bold", "--style-for", "small=classic", "--style-for", "medium=standard"}, `{"content":{"style_by_size":{"medium":"standard","small":"classic"}}}`},
+		{[]string{"widget", "update", "cpu", "--density", "compact"}, `{"content":{"density":"compact"}}`},
+		{[]string{"widget", "update", "cpu", "--density-for", "lock_screen=compact"}, `{"content":{"density_by_size":{"lock_screen":"compact"}}}`},
 		{[]string{"widget", "update", "cpu", "--no-style"}, `{"content":{"style":null}}`},
+		{[]string{"widget", "update", "cpu", "--no-style-for"}, `{"content":{"style_by_size":null}}`},
+		{[]string{"widget", "update", "cpu", "--no-density"}, `{"content":{"density":null}}`},
+		{[]string{"widget", "update", "cpu", "--no-density-for", "--template", "gauge"}, `{"content":{"density_by_size":null,"template":"gauge"}}`},
 	} {
 		n := len(f.calls)
 		if r := runCLI(t, srv, nil, "", tc.argv...); r.code != 0 {
@@ -503,17 +513,36 @@ func TestWidgetStyle(t *testing.T) {
 		}
 	}
 
-	n := len(f.calls)
-	r := runCLI(t, srv, nil, "", "widget", "update", "cpu", "--no-style", "--style", "rethink")
-	if r.code != ExitUsage || !strings.Contains(r.stderr, "--no-style") || len(f.calls) != n {
-		t.Errorf("--no-style with --style: exit %d %q, %d calls", r.code, r.stderr, len(f.calls)-n)
+	for _, argv := range [][]string{
+		{"--no-style", "--style", "bold"},
+		{"--no-style-for", "--style-for", "small=bold"},
+		{"--no-density", "--density", "compact"},
+		{"--no-density-for", "--density-for", "small=compact"},
+		{"--style-for", "small"},
+	} {
+		n := len(f.calls)
+		r := runCLI(t, srv, nil, "", append([]string{"widget", "update", "cpu"}, argv...)...)
+		if r.code != ExitUsage || !strings.Contains(r.stderr, argv[0]) || len(f.calls) != n {
+			t.Errorf("%v: exit %d %q, %d calls", argv, r.code, r.stderr, len(f.calls)-n)
+		}
 	}
 
-	// The CLI does not know which template offers which style: the server's
-	// refusal reaches the user as sent.
-	const msg = `style "original" is not available for template "gauge"; allowed: refined, rethink`
+	// The help names only the current looks.
+	r := runCLI(t, srv, nil, "", "widget", "update", "--help")
+	if !strings.Contains(r.stdout, "standard (the default), bold or classic") {
+		t.Errorf("help does not name the looks:\n%s", r.stdout)
+	}
+	for _, old := range []string{"refined", "rethink", "original"} {
+		if strings.Contains(r.stdout, old) {
+			t.Errorf("help still names %s", old)
+		}
+	}
+
+	// The CLI does not check look or density names: the server's refusal
+	// reaches the user as sent.
+	const msg = `style must be one of standard, bold, classic, got "fancy"`
 	f.reply("PATCH /widgets/cpu", 422, `{"status":422,"code":"widget.content_invalid","detail":"`+strings.ReplaceAll(msg, `"`, `\"`)+`"}`)
-	r = runCLI(t, srv, nil, "", "widget", "update", "cpu", "--style", "original")
+	r = runCLI(t, srv, nil, "", "widget", "update", "cpu", "--style", "fancy")
 	if r.code != ExitError || !strings.Contains(r.stderr, "widget.content_invalid: "+msg) {
 		t.Errorf("422: exit %d %q", r.code, r.stderr)
 	}

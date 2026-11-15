@@ -91,15 +91,26 @@ func newWidgetCreateCmd(a *App) *cobra.Command {
 	return c
 }
 
+// widgetClears are update's flags that clear a look setting with null, so the
+// one picked in the app applies again.
+var widgetClears = []struct{ flag, with, path, usage string }{
+	{"no-style", "style", "content.style", "clear the style, so the one picked in the app applies again"},
+	{"no-style-for", "style-for", "content.style_by_size", "clear every per-size style"},
+	{"no-density", "density", "content.density", "clear the row density, so the one picked in the app applies again"},
+	{"no-density-for", "density-for", "content.density_by_size", "clear every per-size row density"},
+}
+
 func newWidgetUpdateCmd(a *App) *cobra.Command {
 	var bf bodyFlags
-	var noTarget, noStyle bool
+	var noTarget bool
 	c := &cobra.Command{
 		Use:   "update <slug>",
 		Short: "Update a widget",
 		Long: `Update a widget with a JSON merge patch: content fields you leave out keep
-their stored value, and null clears one. --no-style clears the style, so the
-one picked in the app applies again.`,
+their stored value, and null clears one. --no-style, --no-style-for,
+--no-density and --no-density-for clear those settings, so the ones picked in
+the app apply again. --style-for and --density-for replace the whole stored
+per-size setting: repeat them for every size you want to keep.`,
 		Args:        checkArgs,
 		Annotations: map[string]string{"operation": "updateWidget"},
 		RunE: func(cmd *cobra.Command, argv []string) error {
@@ -114,11 +125,14 @@ one picked in the app applies again.`,
 				}
 				conv["target"] = nil
 			}
-			if noStyle {
-				if cmd.Flags().Changed("style") {
-					return usagef("--no-style cannot be used with --style")
+			for _, cl := range widgetClears {
+				if on, _ := cmd.Flags().GetBool(cl.flag); !on {
+					continue
 				}
-				if err := body.Set(conv, "content.style", nil); err != nil {
+				if cmd.Flags().Changed(cl.with) {
+					return usagef("--%s cannot be used with --%s", cl.flag, cl.with)
+				}
+				if err := body.Set(conv, cl.path, nil); err != nil {
 					return err
 				}
 			}
@@ -144,7 +158,9 @@ one picked in the app applies again.`,
 	addFields(c, widgetContentFields)
 	addFields(c, targetFields)
 	c.Flags().BoolVar(&noTarget, "no-target", false, "organization keys: clear the target, so everyone the routing rules allow gets it")
-	c.Flags().BoolVar(&noStyle, "no-style", false, "clear the style, so the one picked in the app applies again")
+	for _, cl := range widgetClears {
+		c.Flags().Bool(cl.flag, false, cl.usage)
+	}
 	bf.register(c)
 	return c
 }

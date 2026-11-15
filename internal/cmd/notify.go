@@ -80,15 +80,9 @@ func (n *notificationInput) build(a *App, cmd *cobra.Command) (map[string]any, e
 		}
 	}
 	if len(n.meta) > 0 {
-		ps, err := pairs("meta", n.meta)
-		if err != nil {
+		if conv["metadata"], err = pairMap("meta", n.meta); err != nil {
 			return nil, err
 		}
-		m := map[string]any{}
-		for _, p := range ps {
-			m[p[0]] = p[1]
-		}
-		conv["metadata"] = m
 	}
 	if n.noPush {
 		conv["push"] = false
