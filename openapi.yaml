@@ -6801,6 +6801,14 @@ components:
           type:
             - array
             - "null"
+        density:
+          description: "Row density of the stat_list template: auto, compact or comfortable. stat_list only: on any other template it is a 422 widget.content_invalid, and a PATCH that moves a widget with a stored density or density_by_size to another template is refused unless the same PATCH clears them (null). Precedence on the devices, for each size the widget is drawn at: density_by_size for that size, else this density, else the user's in-app Row Density for that size, else their pick for the widget, else auto. Any other value is a 422 widget.content_invalid naming the allowed ones; case is ignored. Omit it to leave the choice to the user. On PATCH, null (or an empty string) clears it and a field left out keeps it."
+          type: string
+        density_by_size:
+          additionalProperties:
+            type: string
+          description: "The stat_list row density for one size, overriding density there: keys small, medium, large and lock_screen as in style_by_size, values auto, compact or comfortable. stat_list only, like density. An unknown key or value is a 422 widget.content_invalid naming the allowed ones; case is ignored, and an empty object is stored as absent. On PATCH, an object replaces the whole stored map, null clears it, and a field left out keeps it."
+          type: object
         device_sort:
           description: Reorders devices on write for the battery template, so the prefix each widget family renders (2 on small, 4 on medium, 8 on large) holds the devices that matter. Keys apply in order; the first that separates two devices wins, so a second key is a tie-break. The stored order changes, so this response and later GETs return the sorted array; devices no key separates keep the order you sent. Omit to keep the order as sent. Ignored for other templates.
           items:
@@ -6869,8 +6877,13 @@ components:
             - array
             - "null"
         style:
-          description: "The look the template is drawn in: refined, rethink or original. Every template offers refined and rethink; original (the design from before the redesign) only status, stat_list, battery, flow and heatmap. Any other value, or one the template does not offer, is a 422 widget.content_invalid naming the template's styles; case is ignored. Precedence on the devices: a style set here wins over the user's in-app pick for this widget; without one the in-app pick applies, and without that the widget is refined. Omit it to leave the choice to the user: a widget created without it reads back without the key, not as refined. On PATCH, null (or an empty string) clears it and hands the choice back, and a field left out keeps the stored style. POST is an upsert that replaces the whole content, so a re-POST without style clears it; resend the style to keep it. A PATCH that moves the widget to a template that does not offer its stored style is refused unless the same PATCH changes or clears the style."
+          description: "The look the template is drawn in: standard, bold or classic. Every template offers all three. Any other value is a 422 widget.content_invalid naming them; case is ignored. Precedence on the devices, for each size the widget is drawn at: style_by_size for that size, else this style, else the user's in-app pick for that size, else their pick for the widget, else standard. Omit it to leave the choice to the user: a widget created without it reads back without the key, not as standard. On PATCH, null (or an empty string) clears it and hands the choice back, and a field left out keeps the stored style. POST is an upsert that replaces the whole content, so a re-POST without style clears it; resend the style to keep it."
           type: string
+        style_by_size:
+          additionalProperties:
+            type: string
+          description: "The look for one size, overriding style there: an object whose keys are small, medium and large (the Home Screen sizes; on Android 2x2, 4x2 and 4x4) and lock_screen (every Lock Screen and accessory size; Android has none), each value standard, bold or classic. Any template. An unknown key or value is a 422 widget.content_invalid naming the allowed ones; case is ignored, and an empty object is stored as absent. On PATCH, an object replaces the whole stored map (a size left out of it is dropped), null clears it, and a field left out keeps it."
+          type: object
         subtitle:
           maxLength: 256
           type: string
