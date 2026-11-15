@@ -108,8 +108,9 @@ func newWidgetUpdateCmd(a *App) *cobra.Command {
 		Short: "Update a widget",
 		Long: `Update a widget with a JSON merge patch: content fields you leave out keep
 their stored value, and null clears one. --no-style, --no-style-for,
---no-density and --no-density-for clear those settings, so the ones picked in
-the app apply again. --style-for and --density-for replace the whole stored
+--no-density and --no-density-for clear those settings. The pick made in the
+app applies again once both the general and the per-size setting are cleared;
+until then the one still stored decides. --style-for and --density-for replace the whole stored
 per-size setting: repeat them for every size you want to keep.`,
 		Args:        checkArgs,
 		Annotations: map[string]string{"operation": "updateWidget"},
