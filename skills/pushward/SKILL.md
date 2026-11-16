@@ -188,7 +188,7 @@ pushward activity end agent-auth-refactor --status success --text "Merged as 3f2
   activity that already ended it does nothing and exits 0.
 - `end --status` shows a final frame (green check, red cross, grey stop) for 4 seconds before
   ending, so the last thing on screen is the outcome. From CLI 1.14.0 a checklist ends at
-  once and keeps its count text.
+  once, without that frame; the server keeps its count text either way.
 - Update on milestones, not on every log line. Each update is a push, free accounts have a
   monthly update allowance (`pushward me` prints usage), and `activity start` costs two.
 - Use `generic` with `--progress 0.4` for one long job with a known fraction, `steps` for a
