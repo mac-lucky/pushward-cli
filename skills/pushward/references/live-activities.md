@@ -162,7 +162,7 @@ the activity. Run it again for the next tick until `state` is `ended`, and pass 
 last run printed as checked (`--checked notes,tag`, or `--checked ''` for none): a tick that
 landed while you were busy then returns at once instead of sitting out the whole `--timeout`.
 Exit 7 means nothing changed during the wait. Once every item is checked the server ends the
-card a few seconds later and the wait returns then. Waiting on a checklist needs CLI 1.13.0.
+card a few seconds later and the wait returns then. Waiting on a checklist needs CLI 1.14.0.
 
 To keep a finished list on screen, send `-F content.auto_end=false` with `start` or `update`.
 The server then leaves a complete list ongoing (the card reads "All done") until you run
