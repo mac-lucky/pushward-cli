@@ -515,6 +515,7 @@ func TestActivityWaitChecklist(t *testing.T) {
 		out     string
 	}{
 		{"tick", nil, []string{open, open, ticked}, 0, 3, "ongoing:milk"},
+		{"untick", nil, []string{ticked, ticked, open}, 0, 3, "ongoing:"},
 		{"ended", nil, []string{open, ended}, 0, 2, "ended:"},
 		{"timed out", nil, []string{open}, ExitWaitTimeout, 0, "ongoing:"},
 		{"all checked waits for the end", nil, []string{allDone, allDone, endedDone}, 0, 3, "ended:milk,eggs"},
@@ -544,9 +545,20 @@ func TestActivityWaitChecklist(t *testing.T) {
 		})
 	}
 
+	// A list turned into another template mid-wait stops the wait and prints what it became.
+	replies := []string{open, `{"slug":"shop","state":"ongoing","content":{"template":"generic"}}`}
 	f, srv := newFake(t)
+	f.routes["GET /activities/shop"] = func(call) (int, string) {
+		return 200, replies[min(len(f.calls), len(replies))-1]
+	}
+	r := runCLI(t, srv, nil, "", "activity", "wait", "shop", "--jq", ".content.template")
+	if r.code != ExitError || strings.TrimSpace(r.stdout) != "generic" || !strings.Contains(r.stderr, `template "generic", not checklist`) {
+		t.Errorf("template change: exit %d out %q err %q", r.code, r.stdout, r.stderr)
+	}
+
+	f, srv = newFake(t)
 	f.reply("GET /activities/shop", 200, strings.Replace(ended, "false", "true", 1))
-	r := runWith(t, srv, func(a *App) { a.StdoutTTY = true }, "activity", "wait", "shop")
+	r = runWith(t, srv, func(a *App) { a.StdoutTTY = true }, "activity", "wait", "shop")
 	want := "1/2 checked, ended ID LABEL CHECKED milk Milk true eggs Eggs false"
 	if got := strings.Join(strings.Fields(r.stdout), " "); r.code != 0 || got != want {
 		t.Errorf("exit %d, terminal output %q, want %q", r.code, got, want)

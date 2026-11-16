@@ -143,7 +143,7 @@ add them by index: `-f content.options[0].icon=trash -f content.options[1].icon=
 ```sh
 pushward activity start agent-release-prep --name "Release prep" --template checklist --ended-ttl 30m \
   -F 'content.items=[{"id":"notes","label":"Write release notes"},{"id":"tag","label":"Tag v2.4"},{"id":"post","label":"Post in #releases"}]'
-pushward activity wait agent-release-prep --timeout 9m --jq '{state: .state, done: [.content.items[] | select(.checked) | .id]}'
+pushward activity wait agent-release-prep --timeout 9m --checked '' --jq '{state: .state, done: [.content.items[] | select(.checked) | .id]}'
 ```
 
 1 to 8 items, each with an `id` (up to 16 letters, digits, `-` or `_`), a `label` of up to 40
@@ -159,8 +159,9 @@ template.
 
 `activity wait` returns as soon as an item is ticked or unticked, or the card ends, and prints
 the activity. Run it again for the next tick until `state` is `ended`, and pass the ids the
-last run printed as checked (`--checked notes,tag`, or `--checked ''` for none): a tick that
-landed while you were busy then returns at once instead of sitting out the whole `--timeout`.
+last run printed as checked (`--checked notes,tag`, or `--checked ''` for none, as in the first
+wait after `start`): a tick that landed while you were busy then returns at once instead of
+sitting out the whole `--timeout`.
 Exit 7 means nothing changed during the wait. Once every item is checked the server ends the
 card a few seconds later and the wait returns then. Waiting on a checklist needs CLI 1.14.0.
 
