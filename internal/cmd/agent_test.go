@@ -158,7 +158,7 @@ func TestAgentHookSealsNotifications(t *testing.T) {
 // PUSHWARD_AGENT_<FLAG> sets a flag the command line leaves out.
 func TestAgentHookFlagsFromEnv(t *testing.T) {
 	f, srv := newFake(t)
-	f.reply("POST /notifications", 201, `{"id":5,"answerable":true}`)
+	notifyRoute(f, false, 201, `{"id":5,"answerable":true}`)
 	f.reply("GET /notifications/answers/5", 200, `{"notification_id":5,"status":"answered","action_id":"allow"}`)
 	env := map[string]string{"PUSHWARD_AGENT_VIA": "notification", "PUSHWARD_AGENT_DESK": "away"}
 	r := runCLI(t, srv, env, strings.Replace(hookPermission, `"s1"`, `"s2"`, 1), "agent", "hook", "codex")
