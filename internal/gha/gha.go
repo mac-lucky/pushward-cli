@@ -65,6 +65,21 @@ func Mask(w io.Writer, value string) {
 	fmt.Fprintf(w, "::add-mask::%s\n", value)
 }
 
+// Echo prints text in a collapsed group of the log with workflow commands
+// stopped around it, so a line of text (an answer someone typed) cannot run
+// as one. The resume token is picked like an output delimiter.
+func Echo(w io.Writer, title, text string) error {
+	token, err := delimiter(text)
+	if err != nil {
+		return err
+	}
+	if !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	fmt.Fprintf(w, "::group::%s\n::stop-commands::%s\n%s::%s::\n::endgroup::\n", title, token, text, token)
+	return nil
+}
+
 // Annotate writes a PushWard warning or error annotation for the run page.
 func Annotate(w io.Writer, level, msg string) {
 	fmt.Fprintf(w, "::%s title=PushWard::%s\n", level, EscapeData(msg))

@@ -267,6 +267,25 @@ func TestGHAWaitForAnswer(t *testing.T) {
 	}
 }
 
+// Text someone typed into an answer is echoed raw by --jq; a line of it must
+// not run as a workflow command.
+func TestGHAEchoStopsCommands(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("GET /notifications/answers/8", 200, `{"notification_id":8,"status":"answered","action_id":"ok","text":"fine\n::error::forged"}`)
+	env, out := ghaEnv(t, map[string]string{"token": "hlk", "command": "notification answer 8 --jq .text"})
+	r := runCLI(t, srv, env, "", "gha")
+	if r.code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	m := regexp.MustCompile(`(?s)::group::PushWard response\n::stop-commands::(\S+)\n(.*)::(\S+)::\n::endgroup::\n`).FindStringSubmatch(r.stdout)
+	if m == nil || m[1] != m[3] || m[2] != "fine\n::error::forged\n" {
+		t.Errorf("response not echoed with commands stopped:\n%s", r.stdout)
+	}
+	if o := readOutputs(t, out); o["answer-text"] != "fine\n::error::forged" {
+		t.Errorf("outputs %v", o)
+	}
+}
+
 func TestGHAEncrypts(t *testing.T) {
 	f, srv := newFake(t)
 	t.Setenv("PUSHWARD_E2E_KEY", "")

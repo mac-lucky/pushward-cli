@@ -182,11 +182,9 @@ func (a *App) runGHA() error {
 		}
 	}
 	if out.Len() > 0 {
-		fmt.Fprintf(a.Stdout, "::group::PushWard response\n%s", out.String())
-		if !bytes.HasSuffix(out.Bytes(), []byte("\n")) {
-			fmt.Fprintln(a.Stdout)
+		if err := gha.Echo(a.Stdout, "PushWard response", out.String()); err != nil {
+			gha.Annotate(a.Stdout, "warning", "not showing the response: "+err.Error())
 		}
-		fmt.Fprintln(a.Stdout, "::endgroup::")
 	}
 	if err := gha.WriteOutputs(a.Getenv("GITHUB_OUTPUT"), ghaOutputs(run.Body, run.Status, slug)); err != nil {
 		gha.Annotate(a.Stdout, "warning", "writing step outputs: "+err.Error())
