@@ -164,22 +164,63 @@ jobs:
         env:
           COMMITTER_TOKEN: ${{ steps.app.outputs.token }}
 
+  # Gives the digest the action release pins a tag of its own, which no later
+  # push reuses. A re-run of the tag re-pushes :X.Y.Z with a new digest, and
+  # the nightly GHCR cleanup deletes every index no tag points at, so without
+  # this tag every action release pinned to the old digest would stop pulling.
+  pin-image:
+    name: Pin the action image
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    needs: ci-cd
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    outputs:
+      digest: ${{ steps.pin.outputs.digest }}
+    env:
+      TAG: ${{ github.ref_name }}
+      IMAGE: ghcr.io/mac-lucky/pushward-cli
+    steps:
+      - name: Tag the released digest
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}')
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]]
+          pin="${IMAGE}:action-${VERSION}-${digest:7:12}"
+          docker buildx imagetools create --tag "$pin" "${IMAGE}@${digest}"
+          got=$(docker buildx imagetools inspect "$pin" --format '{{.Manifest.Digest}}')
+          if [[ $got != "$digest" ]]; then
+            echo "::error::$pin points at $got, not $digest"
+            exit 1
+          fi
+          docker logout ghcr.io
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
   # Copies action/action.yml into mac-lucky/pushward-action with the new image
-  # pinned, then tags and releases it there, moving the major tag (v1) along.
-  # Prereleases stop before this.
+  # pinned by tag and digest, then tags and releases it there, moving the
+  # major tag (v1) along. Prereleases stop before this.
   bump-action:
     name: Release pushward-action
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-    needs: ci-cd
+    needs: pin-image
     runs-on: ubuntu-latest
     permissions: {}
     env:
       TAG: ${{ github.ref_name }}
+      DIGEST: ${{ needs.pin-image.outputs.digest }}
     steps:
       # Action users pull the image without credentials. This runner has none
       # either, so a private package fails here instead of in their workflows.
       - name: Pull the image anonymously
-        run: docker run --rm "ghcr.io/mac-lucky/pushward-cli:${TAG#v}" version
+        run: |
+          set -euo pipefail
+          [[ $DIGEST =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker run --rm "ghcr.io/mac-lucky/pushward-cli:${TAG#v}@${DIGEST}" version
 
       - name: Checkout the action manifest
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -220,8 +261,8 @@ jobs:
           VERSION="${TAG#v}"
           major="${VERSION%%.*}"
           cp ../cli/action/action.yml action.yml
-          sed -i -E "s#(docker://ghcr\.io/mac-lucky/pushward-cli:)[^'\"]+#\1${VERSION}#" action.yml
-          grep -q "docker://ghcr.io/mac-lucky/pushward-cli:${VERSION}'" action.yml
+          sed -i -E "s#(docker://ghcr\.io/mac-lucky/pushward-cli:)[^'\"]+#\1${VERSION}@${DIGEST}#" action.yml
+          grep -q "docker://ghcr.io/mac-lucky/pushward-cli:${VERSION}@${DIGEST}'" action.yml
           git config user.name mac-lucky
           git config user.email 44085390+mac-lucky@users.noreply.github.com
           if ! git diff --quiet; then

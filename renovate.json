@@ -1,4 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>mac-lucky/actions-shared-workflows"]
+  "extends": ["github>mac-lucky/actions-shared-workflows"],
+  "packageRules": [
+    {
+      "description": "The release pins the action image; the source keeps the :0.0.0 placeholder.",
+      "matchFileNames": ["action/action.yml"],
+      "enabled": false
+    }
+  ]
 }
