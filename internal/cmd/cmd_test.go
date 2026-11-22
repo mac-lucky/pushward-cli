@@ -842,3 +842,13 @@ func TestHealthNeedsNoKey(t *testing.T) {
 		t.Errorf("exit %d auth %q err %s", r.code, f.calls[0].Auth, r.stderr)
 	}
 }
+
+// Ids past ten digits print in full, not in exponent form.
+func TestStrNumbers(t *testing.T) {
+	m := decode([]byte(`{"id":12345678901,"n":42,"f":0.25,"max":9007199254740991}`))
+	for key, want := range map[string]string{"id": "12345678901", "n": "42", "f": "0.25", "max": "9007199254740991"} {
+		if got := str(m, key); got != want {
+			t.Errorf("%s: %q, want %q", key, got, want)
+		}
+	}
+}

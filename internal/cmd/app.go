@@ -493,7 +493,7 @@ func str(m map[string]any, keys ...string) string {
 	case string:
 		return t
 	case float64:
-		return fmt.Sprintf("%.10g", t)
+		return strconv.FormatFloat(t, 'f', -1, 64)
 	default:
 		b, _ := json.Marshal(t)
 		return string(b)
