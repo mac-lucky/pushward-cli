@@ -32,6 +32,9 @@ const (
 	// pollEvery paces plain reads once the account's long-poll slots are
 	// taken (it has about four, shared by every waiting reader).
 	pollEvery = 3 * time.Second
+	// longPollAgain is how long plain reads go on before a long-poll tries
+	// for a slot again.
+	longPollAgain = 30 * time.Second
 	// A long-poll that answers sooner than quickReturn with nothing new
 	// waits quickPause before the next, so it cannot spin.
 	quickReturn = time.Second
@@ -711,13 +714,19 @@ func (a *ask) watchNotification(ctx context.Context, id string, ids map[string]b
 }
 
 // wait reads op until done returns an event. It long-polls while the account
-// has a slot for it and reads every pollEvery once it has none, waits out
-// the network and the server, and ends with failed on any other error. It
-// returns the zero event when ctx ends.
+// has a slot for it and reads every pollEvery once it has none, trying for
+// a slot again every longPollAgain, waits out the network and the server,
+// and ends with failed on any other error. It returns the zero event when
+// ctx ends.
 func (r *Runner) wait(ctx context.Context, op string, params map[string]string, done func([]byte) (event, bool), failed func(error) event) event {
 	long := true
+	var plainSince time.Time
+	limited := false
 	failures := 0
 	for {
+		if !long && time.Since(plainSince) >= longPollAgain {
+			long = true
+		}
 		var q url.Values
 		if long {
 			q = url.Values{"wait": {longPollSeconds}}
@@ -733,8 +742,13 @@ func (r *Runner) wait(ctx context.Context, op string, params map[string]string, 
 				return ev
 			}
 		case long && isWaitLimit(err):
-			r.logf("%s: every long-poll slot is taken, reading every %s", op, pollEvery)
+			// Logged once: a busy account would log it every longPollAgain.
+			if !limited {
+				r.logf("%s: every long-poll slot is taken, reading every %s", op, pollEvery)
+				limited = true
+			}
 			long = false
+			plainSince = time.Now()
 			continue
 		case api.Transient(err):
 			d := api.Backoff(failures, err)

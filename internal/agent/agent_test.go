@@ -948,6 +948,24 @@ func TestWaitLimitFallsBackToPolling(t *testing.T) {
 	if long != 1 || plain < 4 || plain > 6 {
 		t.Errorf("%d reads, %d long-polls, %d plain", len(reads), long, plain)
 	}
+
+	// Every 30s it tries for a slot again, and says so in the log once.
+	f = newFakeAPI()
+	f.waitLimit = true
+	f.cardAnswer = answerCard("allow", 100*time.Second)
+	out, logs := run(t, f, away(), nil, Claude, claudePermission)
+	if out != allowOut {
+		t.Fatalf("stdout %s\nlog:\n%s", out, logs)
+	}
+	long = 0
+	for _, r := range f.sent("GET", "/activities/") {
+		if r.Query.Get("wait") == "25" {
+			long++
+		}
+	}
+	if n := strings.Count(logs, "every long-poll slot is taken"); long != 4 || n != 1 {
+		t.Errorf("%d long-polls, logged %d times\nlog:\n%s", long, n, logs)
+	}
 }
 
 func TestNotificationAnswersWithTextAndStrayActions(t *testing.T) {
