@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +214,42 @@ func TestNotifyWaitRetriesOutage(t *testing.T) {
 	r = runCLI(t, srv, nil, "", "notify", "--title", "a", "--body", "b", "--action", "deploy=Deploy", "--wait", "1m")
 	if r.code == 0 || r.code == ExitWaitTimeout || !strings.Contains(r.stderr, "502") {
 		t.Errorf("exit %d stderr %q", r.code, r.stderr)
+	}
+}
+
+// --wait also rides out a network that is down: refused connections and
+// long-poll attempts that time out, for longer than one call retries.
+func TestNotifyWaitRetriesNetworkDrop(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("POST /notifications", 201, `{"id":9,"answerable":true,"delivery":"all"}`)
+	polls := 0
+	f.routes["GET /notifications/answers/9"] = func(call) (int, string) {
+		polls++
+		return 200, `{"notification_id":9,"status":"answered","action_id":"deploy"}`
+	}
+	var mu sync.Mutex
+	dropped := 0
+	r := runWith(t, srv, func(a *App) {
+		next := srv.Client().Transport
+		a.HTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			// The client tries a GET five times before poll sees the error.
+			if !req.URL.Query().Has("wait") || dropped >= 10 {
+				return next.RoundTrip(req)
+			}
+			dropped++
+			if dropped%2 == 0 {
+				return nil, context.DeadlineExceeded
+			}
+			return nil, errors.New("connection refused")
+		})}
+	}, "notify", "--title", "a", "--body", "b", "--action", "deploy=Deploy", "--wait", "30m", "--jq", ".action_id")
+	if r.code != 0 || strings.TrimSpace(r.stdout) != "deploy" {
+		t.Fatalf("exit %d out %q err %q", r.code, r.stdout, r.stderr)
+	}
+	if polls != 1 || strings.Count(r.stderr, "retrying in") != 2 || !strings.Contains(r.stderr, "connection refused") {
+		t.Errorf("%d polls, stderr %q", polls, r.stderr)
 	}
 }
 
