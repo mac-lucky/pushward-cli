@@ -15,8 +15,8 @@ import (
 var ErrOrgKey = errors.New("this is an organization's key, whose cards and notifications reach other members; the agent hooks need a personal key")
 
 // ErrKeyUnchecked is a key the check could not tell apart: both creates were
-// refused before the server read their target, so it may be an
-// organization's, and the hooks send nothing with it.
+// refused before the server read their target, or one was accepted with it,
+// so it may be an organization's, and the hooks send nothing with it.
 var ErrKeyUnchecked = errors.New("could not tell whether this is a personal key; the agent hooks send nothing with it")
 
 // keyCheckSlug is the slug of the create that tells the kinds of key apart,
@@ -65,12 +65,12 @@ func (r *Runner) checkKey(ctx context.Context) error {
 	_, err := r.Call(ctx, "createActivity", nil, nil, map[string]any{"slug": keyCheckSlug, "name": "PushWard agent", "target": map[string]any{}})
 	if err == nil {
 		// The target was taken, so nothing tells the keys apart; take the
-		// row back out.
+		// row back out and send nothing.
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWithin)
 		defer cancel()
 		_, err = r.Call(cctx, "deleteActivity", map[string]string{"slug": keyCheckSlug}, nil, nil)
-		r.logf("key check took a target, removed it: %s", describe(err))
-		return nil
+		r.logf("key check took a target, removed it: %s; sending nothing", describe(err))
+		return fmt.Errorf("%w (create accepted an empty target)", ErrKeyUnchecked)
 	}
 	if known, kind := r.keyKind(err); known {
 		return kind
@@ -89,12 +89,12 @@ func (r *Runner) checkKey(ctx context.Context) error {
 	})
 	if err == nil {
 		// Sent with the target ignored, so nothing tells the keys apart;
-		// take it back off the devices.
+		// take it back off the devices and send nothing.
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupWithin)
 		defer cancel()
 		_, err = r.Call(cctx, "retractNotifications", nil, nil, map[string]any{"collapse_id": keyCheckSlug})
-		r.logf("key check sent a notification, retracted it: %s", describe(err))
-		return nil
+		r.logf("key check sent a notification, retracted it: %s; sending nothing", describe(err))
+		return fmt.Errorf("%w (create accepted an empty target)", ErrKeyUnchecked)
 	}
 	if known, kind := r.keyKind(err); known {
 		return kind

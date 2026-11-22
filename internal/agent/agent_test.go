@@ -1288,6 +1288,42 @@ func TestUncheckedKeySendsNothing(t *testing.T) {
 	}
 }
 
+// A create the server accepts with an empty target tells the kinds of key
+// apart no more than a refusal before the target: it is taken back, nothing
+// is sent and the pass is not remembered.
+func TestKeyCheckAcceptedSendsNothing(t *testing.T) {
+	for name, withActivities := range map[string]bool{"activity": true, "notification": false} {
+		f := newFakeAPI()
+		f.takeTarget = true
+		cleanup := "DELETE /activities/" + keyCheckSlug
+		if !withActivities {
+			f.createStatus, f.createCode = http.StatusForbidden, "integration_key.permission_denied"
+			cleanup = "POST /notifications/retract"
+		}
+		f.cardAnswer = answerCard("allow", time.Second)
+		path := filepath.Join(t.TempDir(), "agent-key-check.json")
+		var err error
+		var logs string
+		synctest.Test(t, func(t *testing.T) {
+			r, lb := newRunner(f, away())
+			r.KeyCache = NewKeyCache(path, "https://api.pushward.test", testToken)
+			_ = r.Hook(context.Background(), Claude, strings.NewReader(claudePermission))
+			err = r.CheckKey(context.Background())
+			logs = lb.String()
+		})
+		var got []string
+		for _, c := range f.calls {
+			got = append(got, c.Method+" "+c.Path)
+		}
+		if !errors.Is(err, ErrKeyUnchecked) || strings.Join(got, ",") != cleanup {
+			t.Errorf("%s: %v, requests %v\nlog:\n%s", name, err, got, logs)
+		}
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("%s: the pass was written down", name)
+		}
+	}
+}
+
 // The same call in the same session again: the old card's answer must not
 // answer the new prompt.
 func TestStaleAnswerIsNotReused(t *testing.T) {

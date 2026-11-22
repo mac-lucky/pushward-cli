@@ -82,6 +82,9 @@ type fakeAPI struct {
 	// org makes the key an organization's: the key check is refused as an
 	// invalid target rather than one a personal key cannot have.
 	org bool
+	// takeTarget accepts the key check's creates, as a server that ignored
+	// the empty target would.
+	takeTarget bool
 	// probes counts the key checks, which calls leaves out.
 	probes int
 	// startStatus, when set, refuses the PATCH that starts the card.
@@ -189,7 +192,7 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 			}
 			return problem(f.createStatus, code, f.createDetail)
 		}
-		if probe(c) {
+		if probe(c) && !f.takeTarget {
 			return f.refuseTarget()
 		}
 		if f.act == nil {
@@ -257,7 +260,7 @@ func (f *fakeAPI) route(ctx context.Context, c call) (int, any) {
 		if f.askStatus != 0 && c.Body["actions"] != nil {
 			return problem(f.askStatus, "", "scripted")
 		}
-		if probe(c) {
+		if probe(c) && !f.takeTarget {
 			return f.refuseTarget()
 		}
 		n := &fakeNotification{sent: c.Body, at: time.Now()}
