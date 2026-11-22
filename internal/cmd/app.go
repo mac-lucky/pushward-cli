@@ -351,6 +351,7 @@ func (a *App) sleep(ctx context.Context, d time.Duration) error {
 // error is errWaitTimeout, still with the last response.
 func (a *App) poll(ctx context.Context, opID string, params map[string]string, query url.Values, wait time.Duration, idle func(body []byte) time.Duration, done func(body []byte) (bool, error)) ([]byte, error) {
 	deadline := a.Now().Add(wait)
+	failures := 0
 	for {
 		left := deadline.Sub(a.Now())
 		q := url.Values{}
@@ -368,9 +369,21 @@ func (a *App) poll(ctx context.Context, opID string, params map[string]string, q
 				return nil, err
 			}
 			continue
+		case api.Transient(err) && a.Now().Before(deadline):
+			// The network or the server is down: wait it out, as --follow does.
+			delay := min(api.Backoff(failures, err), deadline.Sub(a.Now()))
+			failures++
+			if !a.quiet {
+				a.out().Warnf("%v; retrying in %s", err, delay.Round(100*time.Millisecond))
+			}
+			if err := a.sleep(ctx, delay); err != nil {
+				return nil, err
+			}
+			continue
 		case err != nil:
 			return nil, err
 		}
+		failures = 0
 		if ok, err := done(resp.Body); ok || err != nil {
 			return resp.Body, err
 		}

@@ -186,6 +186,36 @@ func TestNotifyWaitsForAnswer(t *testing.T) {
 	}
 }
 
+// --wait rides out a server that is down for longer than one call retries.
+func TestNotifyWaitRetriesOutage(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("POST /notifications", 201, `{"id":9,"answerable":true,"delivery":"all"}`)
+	polls := 0
+	f.routes["GET /notifications/answers/9"] = func(call) (int, string) {
+		polls++
+		// The client tries a GET five times before poll sees the error.
+		if polls <= 10 {
+			return 502, "bad gateway"
+		}
+		return 200, `{"notification_id":9,"status":"answered","action_id":"deploy"}`
+	}
+	r := runCLI(t, srv, nil, "", "notify", "--title", "a", "--body", "b", "--action", "deploy=Deploy", "--wait", "10m", "--jq", ".action_id")
+	if r.code != 0 || strings.TrimSpace(r.stdout) != "deploy" {
+		t.Fatalf("exit %d out %q err %q", r.code, r.stdout, r.stderr)
+	}
+	if polls != 11 || strings.Count(r.stderr, "retrying in") != 2 {
+		t.Errorf("%d polls, stderr %q", polls, r.stderr)
+	}
+
+	// Past the deadline the outage is the result.
+	polls = 0
+	f.routes["GET /notifications/answers/9"] = func(call) (int, string) { polls++; return 502, "bad gateway" }
+	r = runCLI(t, srv, nil, "", "notify", "--title", "a", "--body", "b", "--action", "deploy=Deploy", "--wait", "1m")
+	if r.code == 0 || r.code == ExitWaitTimeout || !strings.Contains(r.stderr, "502") {
+		t.Errorf("exit %d stderr %q", r.code, r.stderr)
+	}
+}
+
 func TestNotifyWaitTimesOut(t *testing.T) {
 	f, srv := newFake(t)
 	f.reply("POST /notifications", 201, `{"id":9,"answerable":true}`)
