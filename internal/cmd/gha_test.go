@@ -68,6 +68,18 @@ func TestGHANotify(t *testing.T) {
 	}
 }
 
+// The api-url input wins over $PUSHWARD_API_URL, as --api-url does. The env
+// points at a closed port, so a dropped input cannot reach production.
+func TestGHAAPIURLInput(t *testing.T) {
+	f, srv := newFake(t)
+	t.Setenv("PUSHWARD_API_URL", "http://127.0.0.1:9")
+	f.reply("POST /notifications", 201, `{"id":5,"delivery":"all"}`)
+	env, _ := ghaEnv(t, map[string]string{"token": "hlk_action", "title": "CI failed", "api-url": srv.URL})
+	if r := runCLI(t, srv, env, "", "gha"); r.code != 0 || len(f.calls) != 1 {
+		t.Fatalf("exit %d, %d calls to the api-url server\n%s", r.code, len(f.calls), r.stdout)
+	}
+}
+
 func TestGHAActivityLifecycle(t *testing.T) {
 	f, srv := newFake(t)
 	slug := "gha-mac-lucky-demo-42-build"

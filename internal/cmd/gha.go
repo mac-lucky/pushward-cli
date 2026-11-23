@@ -144,9 +144,11 @@ func (a *App) runGHA() error {
 		Version: a.Version, Commit: a.Commit, Date: a.Date,
 		Stdin: a.Stdin, Stdout: &out, Stderr: a.Stderr,
 		HTTP: a.HTTP, Now: a.Now, Sleep: a.Sleep, Getenv: a.Getenv, Rand: a.Rand,
-		token: token, e2eKey: e2eKey, apiURL: in("api-url"),
+		token: token, e2eKey: e2eKey,
 	}
 	root := NewRoot(run)
+	// After NewRoot: registering --api-url resets the field to the flag's default.
+	run.apiURL = in("api-url")
 	root.SetArgs(argv)
 	runErr := root.Execute()
 
