@@ -373,6 +373,7 @@ var notificationBaseFields = []field{
 	{"subtitle", "subtitle", kString, "subtitle"},
 	{"level", "level", kString, "interruption level: passive, active, time-sensitive, critical"},
 	{"url", "url", kString, "URL opened when the notification is tapped"},
+	{"open-url-on-tap", "open_url_on_tap", kBool, "true: a plain tap opens --url instead of the notification when the device trusts the link (needs --url)"},
 	{"icon-url", "icon_url", kString, "avatar image URL"},
 	{"thread", "thread_id", kString, "thread id for grouping"},
 	{"collapse-id", "collapse_id", kString, "collapse id: a newer notification with the same id replaces this one, and notification retract takes it back"},

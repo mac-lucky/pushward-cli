@@ -107,6 +107,29 @@ func TestWidgetFieldsInSpec(t *testing.T) {
 	}
 }
 
+// TestNotificationFieldsInSpec does the same for the notification flags that
+// notify and schedule create share.
+func TestNotificationFieldsInSpec(t *testing.T) {
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]any `yaml:"properties"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(loadSpec(t), &spec); err != nil {
+		t.Fatal(err)
+	}
+	for _, schema := range []string{"CreateNotificationRequest", "CreateScheduledNotificationRequest"} {
+		props := spec.Components.Schemas[schema].Properties
+		for _, f := range notificationFields {
+			if key, _, _ := strings.Cut(f.path, "."); props[key] == nil {
+				t.Errorf("--%s sets %s, which %s does not have", f.flag, key, schema)
+			}
+		}
+	}
+}
+
 func walk(c *cobra.Command, fn func(*cobra.Command)) {
 	fn(c)
 	for _, sub := range c.Commands() {

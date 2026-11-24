@@ -92,6 +92,8 @@ pushward notify --title "Garage door open" --body "Since 21:40" --collapse-id ga
 pushward notification retract garage-door
 ```
 
+`--open-url-on-tap true` makes a plain tap open the `--url` link instead of the notification, if the device trusts it (its host or scheme is on the app's trusted links, or link confirmation is off). Other links still open the notification first and ask there. Without `--url` the server answers 422; an encrypted url counts. App versions that predate it open the notification as before.
+
 ## Repeat until acknowledged
 
 With `--ack`, `notify` and `schedule create` send the notification again and again until someone taps Acknowledge on one of the devices, or until it expires. It repeats every minute for an hour unless `--ack-repeat` (30s to 1h) and `--ack-expire` (1m to 3h) say otherwise, and the repeats do not count against your quota. Any other button without a url acknowledges it too.

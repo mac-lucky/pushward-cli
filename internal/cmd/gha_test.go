@@ -46,7 +46,7 @@ func TestGHANotify(t *testing.T) {
 	f, srv := newFake(t)
 	t.Setenv("PUSHWARD_API_TOKEN", "")
 	f.reply("POST /notifications", 201, `{"id":5,"delivery":"all"}`)
-	env, out := ghaEnv(t, map[string]string{"token": "hlk_action", "title": "CI failed", "body": "it's \"broken\" $(rm -rf /)", "level": "time-sensitive", "fields": "metadata.sha=abc\n\n"})
+	env, out := ghaEnv(t, map[string]string{"token": "hlk_action", "title": "CI failed", "body": "it's \"broken\" $(rm -rf /)", "level": "time-sensitive", "fields": "metadata.sha=abc\nopen_url_on_tap=true\n\n"})
 	r := runCLI(t, srv, env, "", "gha")
 	if r.code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
@@ -58,7 +58,7 @@ func TestGHANotify(t *testing.T) {
 	if c.Auth != "Bearer hlk_action" {
 		t.Errorf("auth %q", c.Auth)
 	}
-	want := `{"body":"it's \"broken\" $(rm -rf /)","level":"time-sensitive","metadata":{"sha":"abc"},"source":"github-actions","thread_id":"mac-lucky/demo","title":"CI failed","url":"https://github.com/mac-lucky/demo/actions/runs/42"}`
+	want := `{"body":"it's \"broken\" $(rm -rf /)","level":"time-sensitive","metadata":{"sha":"abc"},"open_url_on_tap":true,"source":"github-actions","thread_id":"mac-lucky/demo","title":"CI failed","url":"https://github.com/mac-lucky/demo/actions/runs/42"}`
 	if got := mustJSON(t, c.Body); got != want {
 		t.Errorf("body\n got  %s\n want %s", got, want)
 	}

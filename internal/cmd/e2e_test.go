@@ -56,7 +56,7 @@ func TestNotifyEncrypts(t *testing.T) {
 	f.reply("POST /notifications", 201, `{"id":5,"delivery":"all"}`)
 	r := runCLI(t, srv, nil, `{"subtitle":"from data","level":"active"}`,
 		"notify", "--title", "Rotated", "--body", "new password in the vault", "--url", "https://vault.example.com",
-		"--data", "-", "-F", "metadata.env=prod", "--level", "time-sensitive")
+		"--open-url-on-tap", "true", "--data", "-", "-F", "metadata.env=prod", "--level", "time-sensitive")
 	if r.code != 0 {
 		t.Fatalf("exit %d: %s", r.code, r.stderr)
 	}
@@ -65,7 +65,7 @@ func TestNotifyEncrypts(t *testing.T) {
 	if m := openSent(t, testE2EKey, b); m != want {
 		t.Errorf("sealed %+v, want %+v", m, want)
 	}
-	if b["level"] != "time-sensitive" || mustJSON(t, b["metadata"]) != `{"env":"prod"}` {
+	if b["level"] != "time-sensitive" || mustJSON(t, b["metadata"]) != `{"env":"prod"}` || b["open_url_on_tap"] != true {
 		t.Errorf("plaintext fields lost: %v", b)
 	}
 }

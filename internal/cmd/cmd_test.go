@@ -313,6 +313,31 @@ func TestNotifySnooze(t *testing.T) {
 	}
 }
 
+func TestNotifyOpenURLOnTap(t *testing.T) {
+	f, srv := newFake(t)
+	f.reply("POST /notifications", 201, `{"id":7}`)
+	f.reply("POST /notifications/scheduled", 201, `{"id":"3","send_at":"2026-09-29T14:00:00Z"}`)
+	for _, tc := range []struct {
+		argv []string
+		want any
+	}{
+		{[]string{"notify", "--title", "a", "--body", "b", "--url", "https://x", "--open-url-on-tap", "true"}, true},
+		// false is sent as given, not dropped.
+		{[]string{"notify", "--title", "a", "--body", "b", "--url", "https://x", "--open-url-on-tap", "false"}, false},
+		{[]string{"notify", "--title", "a", "--body", "b", "--url", "https://x"}, nil},
+		{[]string{"schedule", "create", "--in", "2h", "--title", "a", "--body", "b", "--url", "https://x", "--open-url-on-tap", "true"}, true},
+	} {
+		n := len(f.calls)
+		r := runCLI(t, srv, nil, "", tc.argv...)
+		if r.code != 0 || len(f.calls) != n+1 {
+			t.Fatalf("%v: exit %d (%s)", tc.argv, r.code, r.stderr)
+		}
+		if got, ok := f.calls[n].Body["open_url_on_tap"]; got != tc.want || ok != (tc.want != nil) {
+			t.Errorf("%v: open_url_on_tap %v (set %v)", tc.argv, got, ok)
+		}
+	}
+}
+
 func TestParseMinutes(t *testing.T) {
 	for raw, want := range map[string]int64{
 		"15": 15, "15m": 15, "1h30m": 90, "2h": 120, "1d": 1440, "7d": 10080,

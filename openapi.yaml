@@ -3118,6 +3118,9 @@ components:
           additionalProperties:
             type: string
           type: object
+        open_url_on_tap:
+          description: When true, a plain tap on the notification opens its url instead of the notification, if the device trusts that link (its host or scheme is on the user's trusted links, or link confirmation is off). Other links open the notification first, where the link asks before opening. Requires url, or encrypted with the url inside. Stays plaintext beside encrypted. App versions without support open the notification as before.
+          type: boolean
         push:
           default: true
           description: Send as an APNs push to the user's devices. Defaults to true; set false to store in the inbox only.
@@ -3355,6 +3358,9 @@ components:
           additionalProperties:
             type: string
           type: object
+        open_url_on_tap:
+          description: When true, a plain tap on the notification opens its url instead of the notification, if the device trusts that link (its host or scheme is on the user's trusted links, or link confirmation is off). Other links open the notification first, where the link asks before opening. Requires url, or encrypted with the url inside. Stays plaintext beside encrypted. App versions without support open the notification as before.
+          type: boolean
         push:
           default: true
           description: Send as an APNs push to the user's devices. Defaults to true; set false to store in the inbox only.
@@ -4503,6 +4509,9 @@ components:
           additionalProperties:
             type: string
           type: object
+        open_url_on_tap:
+          description: The sender asked that a plain tap open the url (or the url inside encrypted) instead of the notification, if the device trusts that link.
+          type: boolean
         pushed:
           description: Whether the notification was pushed to at least one device.
           readOnly: true
@@ -6105,6 +6114,9 @@ components:
           format: int64
           readOnly: true
           type: integer
+        open_url_on_tap:
+          description: When true, a plain tap on the notification opens its url instead of the notification, if the device trusts that link (its host or scheme is on the user's trusted links, or link confirmation is off). Other links open the notification first, where the link asks before opening. Requires url, or encrypted with the url inside. Stays plaintext beside encrypted. App versions without support open the notification as before.
+          type: boolean
         push:
           default: true
           description: Send as an APNs push to the user's devices. Defaults to true; set false to store in the inbox only.
@@ -11546,6 +11558,15 @@ paths:
                     status: 422
                     title: Unprocessable Entity
                     type: https://pushward.app/errors/unprocessable-entity
+                open_url_on_tap_requires_url:
+                  summary: open_url_on_tap without url or encrypted
+                  value:
+                    code: notification.open_url_on_tap_requires_url
+                    detail: open_url_on_tap requires url, or encrypted with the url inside
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
                 receipts_disabled:
                   summary: Acknowledged notifications are switched off
                   value:
@@ -12888,6 +12909,15 @@ paths:
                   value:
                     code: notification.encryption_unavailable
                     detail: PushWard has not enabled end-to-end encrypted notifications for organizations yet
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+                open_url_on_tap_requires_url:
+                  summary: open_url_on_tap without url or encrypted
+                  value:
+                    code: notification.open_url_on_tap_requires_url
+                    detail: open_url_on_tap requires url, or encrypted with the url inside
                     instance: /requests/9f86d081884c7d65
                     status: 422
                     title: Unprocessable Entity
