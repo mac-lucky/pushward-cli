@@ -336,6 +336,26 @@ func TestNotifyOpenURLOnTap(t *testing.T) {
 			t.Errorf("%v: open_url_on_tap %v (set %v)", tc.argv, got, ok)
 		}
 	}
+	// Without a url it is refused before sending, also when a key would seal
+	// the text and hide from the server that the url is missing.
+	for _, key := range []string{"", testE2EKey} {
+		t.Setenv("PUSHWARD_E2E_KEY", key)
+		for _, argv := range [][]string{
+			{"notify", "--title", "a", "--body", "b", "--open-url-on-tap", "true"},
+			{"notify", "--title", "a", "--body", "b", "-F", "open_url_on_tap=true"},
+			{"schedule", "create", "--in", "2h", "--title", "a", "--body", "b", "--open-url-on-tap", "true"},
+		} {
+			n := len(f.calls)
+			if r := runCLI(t, srv, nil, "", argv...); r.code != ExitUsage || len(f.calls) != n || !strings.Contains(r.stderr, "--open-url-on-tap needs --url") {
+				t.Errorf("key %q %v: exit %d after %d calls (%s), want a usage error before sending", key, argv, r.code, len(f.calls)-n, r.stderr)
+			}
+		}
+	}
+	// A ready-made envelope may hold the url.
+	n := len(f.calls)
+	if r := runCLI(t, srv, nil, "", "notify", "-f", "encrypted="+vectorEnvelope(t), "--open-url-on-tap", "true"); r.code != 0 || len(f.calls) != n+1 || f.calls[n].Body["open_url_on_tap"] != true {
+		t.Errorf("envelope: exit %d (%s)", r.code, r.stderr)
+	}
 }
 
 func TestParseMinutes(t *testing.T) {

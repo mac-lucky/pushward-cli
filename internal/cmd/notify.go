@@ -107,6 +107,11 @@ func (n *notificationInput) build(a *App, cmd *cobra.Command) (map[string]any, e
 	if b["acknowledge"] != nil && b["snooze"] != nil {
 		return nil, usagef("--snooze cannot be combined with --ack, which repeats the notification until someone acknowledges it")
 	}
+	// Checked before sealing: once title and body are sealed the server cannot
+	// tell a missing url from an encrypted one and would accept it.
+	if b["open_url_on_tap"] == true && (b["url"] == nil || b["url"] == "") && b["encrypted"] == nil {
+		return nil, usagef("--open-url-on-tap needs --url, the link a tap opens")
+	}
 	// Encrypt last, so text from --data, -f and -F is sealed too.
 	switch {
 	case n.encrypt && n.noEncrypt:
