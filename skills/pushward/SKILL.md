@@ -19,7 +19,7 @@ Not installed: `brew install mac-lucky/tap/pushward`, or
 `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`. Ask before installing.
 Everything below works on 1.2.0 and later; the organization target flags need 1.3.0 (1.5.0
 on widgets), encryption and `--ack` need 1.4.0, and `--snooze`, `notification answers` and
-`notification retract` need 1.8.0.
+`notification retract` need 1.8.0. `--open-url-on-tap` needs 1.15.0.
 
 `auth status` exiting 3 means no usable key. The user has to fix that themselves, in their own
 terminal: `pushward auth login` prompts for the `hlk_` integration key from the app's
@@ -64,6 +64,10 @@ pushward notify --title "Blocked: migration needs a decision" --body "users.emai
 tail -c 4000 summary.txt | pushward notify --title "Refactor done" --body -
 pushward notify --title "Preview ready" --body "Deployed to staging" --url https://staging.example.com
 ```
+
+`--open-url-on-tap` with `--url` makes a plain tap open the page instead of the notification's
+detail view. The app does that only for a link it trusts (PushWard 1.31.0); any other link still
+opens the detail view first.
 
 Titles carry the news; bodies carry the one detail that matters (counts, durations, the
 branch). A body holds at most 4096 characters. `--level` is `passive`, `active` (default),
