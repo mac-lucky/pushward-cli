@@ -92,7 +92,7 @@ pushward notify --title "Garage door open" --body "Since 21:40" --collapse-id ga
 pushward notification retract garage-door
 ```
 
-`--open-url-on-tap true` makes a plain tap open the `--url` link instead of the notification, if the device trusts it (its host or scheme is on the app's trusted links, or link confirmation is off). Other links still open the notification first and ask there. It needs `--url` (sealed with the rest when a key is set); without one the CLI refuses to send. App versions that predate it open the notification as before.
+`--open-url-on-tap true` makes a plain tap open the `--url` link instead of the notification, if the device trusts it (its host or scheme is on the app's trusted links, or link confirmation is off). Other links still open the notification first and ask there. It needs `--url` (sealed with the rest when a key is set); without one the CLI refuses to send, unless you pass a ready-made `encrypted` envelope that carries the url. App versions that predate it open the notification as before.
 
 ## Repeat until acknowledged
 
