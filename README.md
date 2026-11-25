@@ -274,6 +274,31 @@ pushward email recipient add ops@example.com --label "Ops inbox"
 
 Some settings stay where they are. The per-source level, sounds, critical alert volume, retention and trusted links are kept on each device, so set them in the app there. Signing in, deleting the account, registering a device, purchases, billing changes and creating or revoking org admin keys happen in the apps and the console only.
 
+## Muting
+
+`mute` quiets one notification source or activity slug, or everything, on every device of the account. It takes the account level from the section above: read to list, manage to add and remove.
+
+```sh
+pushward mute add '*' --for 1h --label "Deploy"     # everything but critical alerts, for an hour
+pushward mute add backup --applies-to notifications --mode off
+pushward mute add '*' --schedule 22:00-07:00         # every night, in this machine's time zone
+pushward mute add ci --schedule 09:00-17:00 --tz Europe/Warsaw
+pushward mute list
+pushward mute remove <mute-id>
+```
+
+The target is matched exactly. `*` covers everything except critical alerts; quote it, or the shell swaps it for the file names in the current directory. A mute on one source silences that source's critical alerts too. `--mode silent` (the default) delivers without sound, banner or screen wake and `--mode off` sends no push, but the notification lands in the app's list either way. A muted target starts no new Live Activities, and the running ones update without sound. `--applies-to` is `notifications`, `activities` or `both` (the default).
+
+`--for` takes a duration and `--until` an RFC 3339 time; with neither, the mute stays until it is removed. A `--schedule` window that ends before it starts runs past midnight, and `--tz` defaults to this machine's zone (from `TZ` or `/etc/localtime`; pass it when neither names one). Muting a target again with the same `--applies-to` replaces its timed mute, while a schedule mute is kept next to it. An account holds up to 100 mutes.
+
+In a deploy script, keep `--for` as a safety net in case the script dies before it gets to the remove:
+
+```sh
+id=$(pushward mute add '*' --for 30m --label "Deploy" --jq .id)
+./deploy.sh
+pushward mute remove "$id"
+```
+
 ## End-to-end encryption
 
 With an encryption key, `notify`, `notification send` and `schedule create` encrypt the title, subtitle, body and url on your machine (AES-256-GCM, envelope format `pw1`). PushWard stores and forwards only the sealed text, and only devices holding the key can read it. Level, actions, metadata and the rest of what the server needs to deliver it stay readable. Devices need PushWard 1.17.0 or later; older builds show a placeholder.
