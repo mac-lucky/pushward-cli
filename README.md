@@ -289,14 +289,15 @@ pushward mute remove <mute-id>
 
 The target is matched exactly. `*` covers everything except critical alerts; quote it, or the shell swaps it for the file names in the current directory. A mute on one source silences that source's critical alerts too. `--mode silent` (the default) delivers without sound, banner or screen wake and `--mode off` sends no push, but the notification lands in the app's list either way. A muted target starts no new Live Activities, and the running ones update without sound. `--applies-to` is `notifications`, `activities` or `both` (the default).
 
-`--for` takes a duration and `--until` an RFC 3339 time; with neither, the mute stays until it is removed. A `--schedule` window that ends before it starts runs past midnight, and `--tz` defaults to this machine's zone (from `TZ` or `/etc/localtime`; pass it when neither names one). Muting a target again with the same `--applies-to` replaces its timed mute, while a schedule mute is kept next to it. An account holds up to 100 mutes.
+`--for` takes a duration and `--until` an RFC 3339 time; with neither, the mute stays until it is removed. A `--schedule` window that ends before it starts runs past midnight, and `--tz` defaults to this machine's zone (from `TZ` or `/etc/localtime`; pass it when neither names one). A target holds one mute per `--applies-to` with a schedule and one without. Adding another replaces that one and keeps its id, so a second `--schedule` replaces the first window and `--for` puts an end on a mute that had none. An account holds up to 100 mutes.
 
-In a deploy script, keep `--for` as a safety net in case the script dies before it gets to the remove:
+In a deploy script, keep `--for` as a safety net in case the script dies before it gets to the remove. Check the list first: if `*` is already muted (from the app, say), adding it again would replace that mute and the remove would end it, so leave it alone. Two deploys that run at the same time share one mute, and the first to finish ends it for both.
 
 ```sh
-id=$(pushward mute add '*' --for 30m --label "Deploy" --jq .id)
+held=$(pushward mute list --jq 'any(.mutes[]; .target == "*" and .applies_to == "both" and .schedule == null)')
+if [ "$held" = false ]; then id=$(pushward mute add '*' --for 30m --label "Deploy" --jq .id); fi
 ./deploy.sh
-pushward mute remove "$id"
+if [ -n "${id:-}" ]; then pushward mute remove "$id"; fi
 ```
 
 ## End-to-end encryption

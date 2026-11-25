@@ -349,6 +349,11 @@ Quote `'*'` so the shell does not expand it. A muted notification still lands in
 list, just without sound (`--mode off` sends no push at all), and a muted slug starts no new
 Live Activity, so do not mute something the user is waiting to hear about.
 
+Run `pushward mute list` before adding. A target holds one mute per `--applies-to` with a
+schedule and one without, and `pushward mute add` replaces that one under the same id. If the
+user already muted it, adding again changes their mute, and removing the id you got back ends
+it, so leave a mute you did not add in place.
+
 ## Encrypted notifications
 
 When the user has set up an encryption key (`pushward e2e key-id` exits 0), `notify`,
