@@ -65,7 +65,7 @@ components:
           readOnly: true
           type: integer
         devices_targeted:
-          description: "The owner's Apple devices this run of the Live Activity is meant to reach: those subscribed to it that hold a push-to-start token. Devices of users it is shared with, and Android devices, are not counted. Present only while the activity is ONGOING, on activities the caller owns (not on an organization's)."
+          description: "The owner's Apple devices this run of the Live Activity is meant to reach: those subscribed to it that hold a push-to-start token. Devices of users it is shared with, Android devices, and the owner's devices while the owner has muted the activity, are not counted. Present only while the activity is ONGOING, on activities the caller owns (not on an organization's)."
           format: int64
           readOnly: true
           type: integer
@@ -3056,6 +3056,42 @@ components:
       required:
         - name
       type: object
+    CreateMuteBody:
+      additionalProperties: false
+      properties:
+        applies_to:
+          enum:
+            - notifications
+            - activities
+            - both
+          type: string
+        label:
+          description: The name the app shows for the target.
+          maxLength: 100
+          type: string
+        mode:
+          default: silent
+          description: "For notifications, silent delivers without sound, banner or screen wake and off sends no push; the notification is kept in the list either way. For Live Activities both modes mean no new Live Activity starts and updates arrive without sound: silent and off differ only for notifications."
+          enum:
+            - silent
+            - "off"
+          type: string
+        schedule:
+          $ref: "#/components/schemas/MuteSchedule"
+          description: Daily window; with until set too, a schedule that ends.
+        target:
+          description: A notification source or activity slug, or * for everything except critical alerts.
+          maxLength: 128
+          minLength: 1
+          type: string
+        until:
+          description: "When the mute ends, in the future; absent: until removed."
+          format: date-time
+          type: string
+      required:
+        - target
+        - applies_to
+      type: object
     CreateNotificationRequest:
       additionalProperties: false
       properties:
@@ -4215,6 +4251,18 @@ components:
       required:
         - items
       type: object
+    ListMutesOutputBody:
+      additionalProperties: false
+      properties:
+        mutes:
+          items:
+            $ref: "#/components/schemas/Mute"
+          type:
+            - array
+            - "null"
+      required:
+        - mutes
+      type: object
     ListOrgAuditEventsOutputBody:
       additionalProperties: false
       properties:
@@ -4430,6 +4478,71 @@ components:
       required:
         - url
         - type
+      type: object
+    Mute:
+      additionalProperties: false
+      properties:
+        applies_to:
+          enum:
+            - notifications
+            - activities
+            - both
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        label:
+          description: The name the app showed for the target.
+          type: string
+        mode:
+          description: "For notifications, silent delivers without sound, banner or screen wake and off sends no push; the notification is kept in the list either way. For Live Activities both modes mean no new Live Activity starts and updates arrive without sound: silent and off differ only for notifications."
+          enum:
+            - silent
+            - "off"
+          type: string
+        schedule:
+          $ref: "#/components/schemas/MuteSchedule"
+          description: "Daily window the mute is active in; absent: all day."
+        target:
+          description: A notification source or activity slug, matched exactly, or * for everything except critical alerts.
+          type: string
+        until:
+          description: "When the mute ends; absent: until removed."
+          format: date-time
+          type: string
+      required:
+        - id
+        - target
+        - applies_to
+        - mode
+        - created_at
+      type: object
+    MuteSchedule:
+      additionalProperties: false
+      properties:
+        end_minute:
+          description: End of the window (exclusive), minutes since local midnight; below start_minute the window wraps past midnight. Never equal to start_minute.
+          format: int64
+          maximum: 1439
+          minimum: 0
+          type: integer
+        start_minute:
+          description: Start of the window, minutes since local midnight.
+          format: int64
+          maximum: 1439
+          minimum: 0
+          type: integer
+        time_zone:
+          description: IANA time zone the window is in, e.g. Europe/Warsaw.
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+        - start_minute
+        - end_minute
+        - time_zone
       type: object
     Notification:
       additionalProperties: false
@@ -6991,7 +7104,7 @@ info:
     | `emails` | `none`, `send` | send: `POST /emails` (verified, opted-in recipients only) |
     | `devices` | `none`, `read`, `manage` | read: `GET /devices`, `GET /devices/{device_id}`, `GET /devices/{device_id}/subscriptions` and `GET /devices/{device_id}/subscriptions/{slug}`; manage: also `PATCH /devices/{device_id}` (rename), `DELETE /devices/{device_id}`, and following and unfollowing activities (`POST` and `DELETE /devices/{device_id}/subscriptions/{slug}`) |
     | `sharing` | `none`, `read`, `manage` | read: `GET /permissions`, `GET /activities/{slug}/permissions`; manage: also `POST /activities/{slug}/permissions`, `POST /permissions/patterns`, `PATCH /permissions/{id}` (these three need a subscription) and `DELETE /permissions/{id}` |
-    | `account` | `none`, `read`, `manage` | read: `GET /app/onboarding`, `GET /emails/recipients`; manage: also `PATCH /auth/me` (nickname), `PATCH /app/onboarding` and the other `/emails/recipients` endpoints |
+    | `account` | `none`, `read`, `manage` | read: `GET /app/onboarding`, `GET /app/mutes`, `GET /emails/recipients`; manage: also `PATCH /auth/me` (nickname), `PATCH /app/onboarding`, `POST`/`DELETE` `/app/mutes` and the other `/emails/recipients` endpoints |
 
     `devices`, `sharing` and `account` are opt-in: every key starts at `none` on them, the default key included, and they are granted from the app. The default key can give another key no more of them than it was granted.
 
@@ -8285,6 +8398,350 @@ paths:
       summary: Grant permission on activity
       tags:
         - Permissions
+  /app/mutes:
+    get:
+      description: Returns the account's mutes, oldest first, leaving out timed ones whose until has passed.
+      operationId: listMutes
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListMutesOutputBody"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                requires_account_read:
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires account:read"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: List mutes
+      tags:
+        - System
+    post:
+      description: Mutes target (a notification source or activity slug, or * for everything except critical alerts) on every device of the account. Re-muting the same target and applies_to replaces the timed mute; a schedule mute is kept separately. 422 for a blank target, an until not in the future, a schedule whose start equals its end or whose time zone is unknown, or a new mute past 100.
+      operationId: createMute
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMuteBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Mute"
+          description: Created
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                requires_account_manage:
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires account:manage"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "422":
+          content:
+            application/problem+json:
+              examples:
+                unprocessable_entity:
+                  value:
+                    detail: validation failed
+                    errors:
+                      - location: body.slug
+                        message: expected length >= 1
+                    instance: /requests/9f86d081884c7d65
+                    status: 422
+                    title: Unprocessable Entity
+                    type: https://pushward.app/errors/unprocessable-entity
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Mute a source or activity
+      tags:
+        - System
+  /app/mutes/{mute_id}:
+    delete:
+      operationId: deleteMute
+      parameters:
+        - in: path
+          name: mute_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              examples:
+                key_expired:
+                  summary: Integration key past its expires_at
+                  value:
+                    code: integration_key.expired
+                    detail: integration key expired
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+                token_invalid:
+                  summary: Missing, unknown or revoked token
+                  value:
+                    code: token.invalid
+                    detail: invalid token
+                    instance: /requests/9f86d081884c7d65
+                    status: 401
+                    title: Unauthorized
+                    type: https://pushward.app/errors/unauthorized
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              examples:
+                requires_account_manage:
+                  value:
+                    code: integration_key.permission_denied
+                    detail: "insufficient permissions: requires account:manage"
+                    instance: /requests/9f86d081884c7d65
+                    status: 403
+                    title: Forbidden
+                    type: https://pushward.app/errors/forbidden
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              examples:
+                not_found:
+                  value:
+                    detail: resource not found
+                    instance: /requests/9f86d081884c7d65
+                    status: 404
+                    title: Not Found
+                    type: https://pushward.app/errors/not-found
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Not Found
+        "429":
+          content:
+            application/problem+json:
+              examples:
+                rate_limit.exceeded:
+                  value:
+                    code: rate_limit.exceeded
+                    detail: rate limit exceeded
+                    instance: /requests/9f86d081884c7d65
+                    retry_after_ms: 60000
+                    status: 429
+                    title: Too Many Requests
+                    type: https://pushward.app/errors/too-many-requests
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              examples:
+                internal_server_error:
+                  value:
+                    detail: internal server error
+                    instance: /requests/9f86d081884c7d65
+                    status: 500
+                    title: Internal Server Error
+                    type: https://pushward.app/errors/internal-server-error
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              examples:
+                service.unavailable:
+                  value:
+                    code: service.unavailable
+                    detail: service temporarily unavailable
+                    instance: /requests/9f86d081884c7d65
+                    status: 503
+                    title: Service Unavailable
+                    type: https://pushward.app/errors/service-unavailable
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Service Unavailable
+      security:
+        - bearer: []
+      summary: Unmute
+      tags:
+        - System
   /app/onboarding:
     get:
       description: Returns the account's activation state (sample, demo, first push sent with an integration key) and the setup sources, each with a snippet holding the literal {{KEY}} where the app puts the key.

@@ -66,7 +66,7 @@ var keyLevels = []struct {
 	// Levels for the account's own settings; an organization key has none of them.
 	{"devices", []string{"none", "read", "manage"}, false, "device level: none, read (devices and what they follow) or manage (also rename, remove, follow and unfollow)"},
 	{"sharing", []string{"none", "read", "manage"}, false, "sharing level: none, read (list shares) or manage (also grant, change and revoke them)"},
-	{"account", []string{"none", "read", "manage"}, false, "account level: none, read (onboarding, email recipients) or manage (also nickname, setup tips and recipients)"},
+	{"account", []string{"none", "read", "manage"}, false, "account level: none, read (onboarding, email recipients, mutes) or manage (also nickname, setup tips, recipients and mutes)"},
 }
 
 // orgKeyLevels are the levels an organization key can have, the ones before
