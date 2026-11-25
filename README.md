@@ -297,7 +297,7 @@ In a deploy script, keep `--for` as a safety net in case the script dies before 
 held=$(pushward mute list --jq 'any(.mutes[]; .target == "*" and .applies_to == "both" and .schedule == null)')
 if [ "$held" = false ]; then id=$(pushward mute add '*' --for 30m --label "Deploy" --jq .id); fi
 ./deploy.sh
-if [ -n "${id:-}" ]; then pushward mute remove "$id"; fi
+if [ -n "${id:-}" ]; then pushward mute remove "$id" || true; fi  # already gone once --for ran out
 ```
 
 ## End-to-end encryption
