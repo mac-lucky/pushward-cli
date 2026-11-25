@@ -138,7 +138,7 @@ func TestMuteList(t *testing.T) {
 
 	f.reply("GET /app/mutes", 403, `{"status":403,"code":"integration_key.permission_denied","detail":"insufficient permissions: requires account:read"}`)
 	r = runCLI(t, srv, nil, "", "mute", "list")
-	if r.code != ExitAuth || !strings.Contains(r.stderr, "requires account:read") || !strings.Contains(r.stderr, "hint: this needs a personal key with the account level at read or above. The app sets it on the default key, which passes it on with pushward key update <key-id> --account read;") {
+	if r.code != ExitAuth || !strings.Contains(r.stderr, "requires account:read") || !strings.Contains(r.stderr, "hint: this needs a personal key with the account level at read or above. Every key starts without it: raise it in the app (Settings > Manage Keys), or from a key that has it with pushward key update <key-id> --account read;") {
 		t.Errorf("403: exit %d, stderr %q", r.code, r.stderr)
 	}
 }

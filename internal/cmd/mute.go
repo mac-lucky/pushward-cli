@@ -190,8 +190,8 @@ func muteHint(err error, level string) error {
 	switch {
 	case !errors.As(err, &ae):
 	case ae.Status == http.StatusForbidden && ae.Code == "integration_key.permission_denied":
-		return fmt.Errorf("%w\nhint: this needs a personal key with the account level at %s or above. The app sets it on the default key, "+
-			"which passes it on with pushward key update <key-id> --account %[2]s; organization keys never have it", err, level)
+		return fmt.Errorf("%w\nhint: this needs a personal key with the account level at %s or above. Every key starts without it: raise it in the app (Settings > Manage Keys), "+
+			"or from a key that has it with pushward key update <key-id> --account %[2]s; organization keys never have it", err, level)
 	case ae.Status == http.StatusNotFound && ae.Code == "mute.not_found":
 		return fmt.Errorf("%w\nhint: pushward mute list shows the ids of this account's mutes", err)
 	}
