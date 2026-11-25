@@ -138,7 +138,7 @@ func TestMuteList(t *testing.T) {
 
 	f.reply("GET /app/mutes", 403, `{"status":403,"code":"integration_key.permission_denied","detail":"insufficient permissions: requires account:read"}`)
 	r = runCLI(t, srv, nil, "", "mute", "list")
-	if r.code != ExitAuth || !strings.Contains(r.stderr, "requires account:read") || !strings.Contains(r.stderr, "hint: this needs a key with the account level at read or manage") {
+	if r.code != ExitAuth || !strings.Contains(r.stderr, "requires account:read") || !strings.Contains(r.stderr, "hint: this needs a personal key with the account level at read or above. The app sets it on the default key, which passes it on with pushward key update <key-id> --account read;") {
 		t.Errorf("403: exit %d, stderr %q", r.code, r.stderr)
 	}
 }
@@ -152,8 +152,14 @@ func TestMuteAddErrors(t *testing.T) {
 	}
 	f.reply("POST /app/mutes", 403, `{"status":403,"code":"integration_key.permission_denied","detail":"insufficient permissions: requires account:manage"}`)
 	r = runCLI(t, srv, nil, "", "mute", "add", "backup")
-	if r.code != ExitAuth || !strings.Contains(r.stderr, "hint: this needs a key with the account level at manage;") {
+	if r.code != ExitAuth || !strings.Contains(r.stderr, "--account manage;") {
 		t.Errorf("403: exit %d, stderr %q", r.code, r.stderr)
+	}
+	// Only a key below the account level gets the hint; another refusal keeps its own message.
+	f.reply("POST /app/mutes", 403, `{"status":403,"code":"subscription.required","detail":"needs a subscription"}`)
+	r = runCLI(t, srv, nil, "", "mute", "add", "backup")
+	if r.code != ExitAuth || strings.Contains(r.stderr, "hint:") {
+		t.Errorf("403 subscription.required: exit %d, stderr %q", r.code, r.stderr)
 	}
 }
 
@@ -176,7 +182,7 @@ func TestMuteRemove(t *testing.T) {
 
 	f.reply("DELETE /app/mutes/m1", 403, `{"status":403,"code":"integration_key.permission_denied","detail":"insufficient permissions: requires account:manage"}`)
 	r = runCLI(t, srv, nil, "", "mute", "remove", "m1")
-	if r.code != ExitAuth || !strings.Contains(r.stderr, "requires account:manage\nhint: this needs a key with the account level at manage;") {
+	if r.code != ExitAuth || !strings.Contains(r.stderr, "requires account:manage\nhint: this needs a personal key with the account level at manage or above.") {
 		t.Errorf("403: exit %d, stderr %q", r.code, r.stderr)
 	}
 }

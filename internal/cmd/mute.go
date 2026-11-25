@@ -55,7 +55,7 @@ func newMuteListCmd(a *App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			resp, err := a.call(cmd.Context(), "listMutes", nil, nil, nil)
 			if err != nil {
-				return muteHint(err, "read or manage")
+				return muteHint(err, "read")
 			}
 			return a.out().Print(resp.Body, func(w io.Writer) error {
 				var list struct {
@@ -89,9 +89,13 @@ func newMuteAddCmd(a *App) *cobra.Command {
 		Short: "Mute a source or activity slug, or '*' for everything but critical alerts",
 		Long: `Mute <target>, a notification source or activity slug matched exactly, or
 '*' (quoted) for everything except critical alerts. Without --for, --until
-or --schedule the mute lasts until it is removed. Muting a target again with
-the same --applies-to replaces its timed mute; a --schedule mute is kept
-next to it. An account holds up to 100 mutes.
+or --schedule the mute lasts until it is removed. A target holds one mute per
+--applies-to with --schedule and one without, and adding another replaces
+that one under the same id: a second --schedule replaces the first window,
+and --for puts an end on a mute that had none. Removing the id that add
+printed then ends the mute that was there before, so a script that removes
+its own mute checks pushward mute list first. An account holds up to 100
+mutes.
 
   pushward mute add '*' --for 1h --label "Deploy"
   pushward mute add backup --applies-to notifications --mode off --until 2026-12-01T08:00:00+01:00
@@ -185,8 +189,9 @@ func muteHint(err error, level string) error {
 	var ae *api.Error
 	switch {
 	case !errors.As(err, &ae):
-	case ae.Status == http.StatusForbidden:
-		return fmt.Errorf("%w\nhint: this needs a key with the account level at %s; keys start at none there, and only the app raises it", err, level)
+	case ae.Status == http.StatusForbidden && ae.Code == "integration_key.permission_denied":
+		return fmt.Errorf("%w\nhint: this needs a personal key with the account level at %s or above. The app sets it on the default key, "+
+			"which passes it on with pushward key update <key-id> --account %[2]s; organization keys never have it", err, level)
 	case ae.Status == http.StatusNotFound && ae.Code == "mute.not_found":
 		return fmt.Errorf("%w\nhint: pushward mute list shows the ids of this account's mutes", err)
 	}
