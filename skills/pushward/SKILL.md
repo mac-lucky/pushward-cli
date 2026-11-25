@@ -19,7 +19,7 @@ Not installed: `brew install mac-lucky/tap/pushward`, or
 `go install github.com/mac-lucky/pushward-cli/cmd/pushward@latest`. Ask before installing.
 Everything below works on 1.2.0 and later; the organization target flags need 1.3.0 (1.5.0
 on widgets), encryption and `--ack` need 1.4.0, and `--snooze`, `notification answers` and
-`notification retract` need 1.8.0. `--open-url-on-tap` needs 1.15.0.
+`notification retract` need 1.8.0. `--open-url-on-tap` needs 1.15.0, `pushward mute` 1.16.0.
 
 `auth status` exiting 3 means no usable key. The user has to fix that themselves, in their own
 terminal: `pushward auth login` prompts for the `hlk_` integration key from the app's
@@ -334,6 +334,20 @@ Some things are not in the CLI: the
 per-source level, sounds, critical alert volume, retention and trusted links live on each
 device, and sign-in, account deletion, registering a device, purchases, billing changes and
 org admin keys stay in the apps and the console. Send the user there for those.
+
+The account level also covers mutes, which quiet a source or activity slug (or `'*'`, all but
+critical alerts) on all of the user's devices. Mute only when they ask, and give the mute an
+end unless they want it kept:
+
+```sh
+pushward mute add '*' --for 1h --label "Deploy"
+pushward mute list
+pushward mute remove <mute-id>
+```
+
+Quote `'*'` so the shell does not expand it. A muted notification still lands in the app's
+list, just without sound (`--mode off` sends no push at all), and a muted slug starts no new
+Live Activity, so do not mute something the user is waiting to hear about.
 
 ## Encrypted notifications
 
