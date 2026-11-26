@@ -6392,6 +6392,12 @@ components:
             - MRR
           maxLength: 32
           type: string
+        progress:
+          description: Fraction from 0.0 to 1.0. Draws a progress bar under this row on clients that support it; value stays the text shown, so send the percentage there yourself. Rows without it draw no bar. stat_list only, like the rest of the row.
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
         timer:
           $ref: "#/components/schemas/TimerValue"
         unit:
